@@ -7,6 +7,10 @@
 | CLI-01 | CLI 提供 start、stop、restart、status | `cli.integration.test.ts` 在允许回环监听的环境通过 | 通过 |
 | CLI-02 | start 后 daemon 脱离终端持续运行 | CLI 集成测试覆盖 detached daemon 与 readiness marker并通过 | 通过 |
 | CLI-03 | 重复 start/stop 幂等且不会误杀其他进程 | PID marker、`/proc` 身份校验及 CLI 集成测试 | 通过 |
+| CLI-04 | Web 支持的主机、线程、消息、请求和终端操作均可由 CLI 完成 | `cli-command.test.ts` 命令矩阵、`control.test.ts` 业务映射 | 通过 |
+| CLI-05 | 面向 LLM 提供稳定 JSON/JSONL、stderr 错误和退出码 | CLI parser/client 单测及构建后集成测试 | 通过 |
+| CLI-06 | CLI 使用私有本机控制通道，不需要 Web 密码且不削弱 HTTPS 门禁 | Unix Socket `0600`、目录 `0700`、HTTP 黑屏和活 socket 保护测试 | 通过 |
+| CLI-07 | wait/watch 不丢失初始化窗口事件，Plan 问题和审批可结构化解决 | 订阅竞态、多问题 answers 和 approval 控制通道测试 | 通过 |
 | SEC-01 | daemon 仅监听回环地址 | 配置强制 `127.0.0.1`；CLI 套接字集成测试通过 | 通过 |
 | SEC-02 | 非可信代理或非 HTTPS 请求在认证前被拒绝且无敏感响应 | `server.test.ts` HTTPS 门禁测试 | 通过 |
 | SEC-03 | 密码使用 Argon2id 哈希，Cookie 为 Secure、HttpOnly、SameSite=Strict | `auth.test.ts`、`server.test.ts` | 通过 |

@@ -12,7 +12,7 @@ export interface RuntimeManager {
   resume(host: HostRecord, thread: ThreadRecord, codexThreadId: string): Promise<void>;
   reconnect(host: HostRecord, thread: ThreadRecord): Promise<void>;
   exit(thread: ThreadRecord, host?: HostRecord): Promise<void>;
-  send(thread: ThreadRecord, text: string): Promise<void>;
+  send(thread: ThreadRecord, text: string): Promise<string | undefined>;
   interrupt(thread: ThreadRecord): Promise<void>;
   resolve(thread: ThreadRecord, requestId: string | number, value: unknown): Promise<void>;
   terminalInput(thread: ThreadRecord, data: string): Promise<void>;
@@ -67,7 +67,7 @@ export class HostRuntimeManager implements RuntimeManager {
   }
   async reconnect(host: HostRecord, thread: ThreadRecord): Promise<void> { if(this.active.has(thread.id))return;if(!thread.codexThreadId)throw new Error("thread has no Codex id");this.events.emit("connectionGenerationChanged",{threadId:thread.id});this.cancelRetry(thread.id);const state={host,thread,attempt:0,cancelled:false};this.retries.set(thread.id,state);await this.tryReconnect(state); }
   async exit(thread: ThreadRecord, host?:HostRecord): Promise<void> { this.cancelRetry(thread.id);const active=this.active.get(thread.id);if(active){this.active.delete(thread.id);await this.dispose(active,{stopTmux:true});return;}if(!host)throw new Error("host is required to exit a disconnected thread");const ssh=await this.createSsh(host);try{await ssh.connect();await (this.options.runtimeFactory?.(ssh)??new TmuxCodexRuntime(ssh)).stop(thread.tmuxSession);}finally{ssh.close();} }
-  async send(thread: ThreadRecord, text: string): Promise<void> { const active = this.must(thread.id); const result = await active.client.startTurn(thread.codexThreadId!, text) as { turn?: { id?: string } }; active.turnId = result.turn?.id;if(!active.session.viewerPane){try{active.session=await active.runtime.attachViewer(active.session,thread.workingDirectory,thread.codexThreadId!);await this.attachTerminal(thread.id,active);}catch(error){this.connectionLost(thread.id,active,"viewer attach failed");throw error;}} }
+  async send(thread: ThreadRecord, text: string): Promise<string | undefined> { const active = this.must(thread.id); const result = await active.client.startTurn(thread.codexThreadId!, text) as { turn?: { id?: string } }; active.turnId = result.turn?.id;if(!active.session.viewerPane){try{active.session=await active.runtime.attachViewer(active.session,thread.workingDirectory,thread.codexThreadId!);await this.attachTerminal(thread.id,active);}catch(error){this.connectionLost(thread.id,active,"viewer attach failed");throw error;}}return active.turnId; }
   async interrupt(thread: ThreadRecord): Promise<void> { const active = this.must(thread.id); if (active.turnId) await active.client.interruptTurn(thread.codexThreadId!, active.turnId); }
   async resolve(thread: ThreadRecord, requestId: string | number, value: unknown): Promise<void> { this.must(thread.id).client.respond(requestId, value as never); }
   async terminalInput(thread: ThreadRecord, data: string): Promise<void> { const active = this.must(thread.id); await active.runtime.sendKeys(active.session, data); }

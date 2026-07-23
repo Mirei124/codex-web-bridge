@@ -124,11 +124,54 @@ export type ServerEvent =
   | { type: "terminal.state"; threadId: string; connected: boolean; takeover: boolean; owner?: string }
   | { type: "error"; threadId?: string; message: string };
 
+export function serverEventThreadId(event: ServerEvent): string | undefined {
+  return event.type === "snapshot" || event.type === "thread.updated"
+    ? event.thread.id
+    : event.threadId;
+}
+
 export type ClientEvent =
   | { type: "subscribe"; threadId: string }
   | { type: "unsubscribe"; threadId: string }
   | { type: "terminal.resize"; threadId: string; cols: number; rows: number }
   | { type: "terminal.input"; threadId: string; data: string };
+
+export const controlMethods = [
+  "host.list", "host.get", "host.upsert", "host.codexThreads",
+  "thread.list", "thread.get", "thread.create", "thread.resume", "thread.exit",
+  "thread.send", "thread.interrupt", "thread.wait", "thread.watch",
+  "request.list", "request.get", "request.resolve", "request.approve",
+  "request.decline", "request.answer",
+  "terminal.screenshot", "terminal.watch", "terminal.takeover",
+  "terminal.release", "terminal.input",
+] as const;
+export type ControlMethod = typeof controlMethods[number];
+export interface ControlRequest {
+  version: 1;
+  id: string;
+  method: ControlMethod;
+  params?: Record<string, unknown>;
+}
+export interface ControlError {
+  code: string;
+  message: string;
+  retryable: boolean;
+  details?: unknown;
+}
+export type ControlResponse =
+  | { version: 1; id: string; ok: true; result: unknown }
+  | { version: 1; id: string; ok: false; error: ControlError };
+export interface ControlEvent {
+  version: 1;
+  id: string;
+  event: ServerEvent;
+}
+export interface ControlDone {
+  version: 1;
+  id: string;
+  done: true;
+  result?: unknown;
+}
 
 export const apiRoutes = {
   session: "/api/auth/session",

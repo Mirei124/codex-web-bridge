@@ -106,6 +106,106 @@ rm -f /tmp/cwb.cookies /tmp/cwb.login.json /tmp/machine-a.hostkey
 
 Open the URL printed by `dashboard`, log in, and create or resume a Codex thread. Both creation and recovery require an absolute working directory accessible to the configured SSH user on A; recovery additionally requires the Codex thread ID. Exiting a thread stops its active tmux-backed process but does not delete Codex history.
 
+## CLI automation
+
+The CLI exposes the dashboard operations through the daemon's private Unix socket. It does not send the dashboard password over HTTP. Run `node "$CWB_CLI" help` for the authoritative syntax.
+
+```text
+host list
+host get HOST_ID
+host codex-threads HOST_ID
+host upsert --id ID --name NAME --hostname HOST --username USER \
+  --host-key SHA256:FINGERPRINT --identity-file ABSOLUTE_PATH [--port PORT]
+
+thread list
+thread get THREAD_ID
+thread create --host HOST_ID --cwd ABSOLUTE_PATH [--title TITLE]
+thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH
+thread send THREAD_ID (--text TEXT | --text-file PATH)
+thread wait THREAD_ID [--timeout MILLISECONDS]
+thread watch THREAD_ID [--timeout MILLISECONDS]
+thread interrupt THREAD_ID
+thread exit THREAD_ID
+
+request list THREAD_ID
+request get THREAD_ID REQUEST_ID
+request approve|decline THREAD_ID REQUEST_ID
+request answer|resolve THREAD_ID REQUEST_ID (--input-json JSON | --input-file PATH)
+
+terminal screenshot THREAD_ID --output PNG_PATH
+terminal watch THREAD_ID [--timeout MILLISECONDS]
+terminal takeover|release THREAD_ID
+terminal input THREAD_ID (--data TEXT | --data-file PATH)
+```
+
+`host upsert` also accepts a complete host object through `--input-json` or `--input-file`. Use `-` as an input, text, or data filename to read stdin. This avoids shell quoting and command-line length problems:
+
+```bash
+node "$CWB_CLI" thread send "$THREAD_ID" --text-file - <<'EOF'
+Review the current changes and report any correctness issues.
+EOF
+
+node "$CWB_CLI" host upsert --input-file - <<'JSON'
+{"id":"machine-a","name":"Machine A","hostname":"machine-a.example","port":22,"username":"codex","hostKeySha256":"SHA256:replace-with-verified-fingerprint","identityFile":"/home/bridge/.ssh/codex_bridge"}
+JSON
+```
+
+### JSON and streaming output
+
+JSON is the default so another program or LLM can consume every invocation without scraping prose. A successful non-streaming command writes exactly one line:
+
+```json
+{"schemaVersion":1,"ok":true,"kind":"result","data":{"state":"running","pid":1234}}
+```
+
+`thread watch` and `terminal watch` write newline-delimited JSON (JSONL). Each live event has `"kind":"event"` and the final line has `"kind":"result"`:
+
+```jsonl
+{"schemaVersion":1,"ok":true,"kind":"event","data":{"type":"message.delta","threadId":"...","messageId":"...","delta":"text"}}
+{"schemaVersion":1,"ok":true,"kind":"result","data":{"id":"...","status":"exited","messages":[],"pendingRequests":[]}}
+```
+
+Errors are one JSON line on stderr. `--human` opts into formatted human-readable output.
+
+### Waiting, Plan questions, and approvals
+
+`thread send` returns after Codex accepts the turn. Call `thread wait` to wait for up to ten minutes by default, or set `--timeout`, until the thread becomes `idle`, `waiting`, `exited`, or `error`. The result is a complete thread snapshot, including messages and pending requests. `thread watch` remains subscribed through ordinary idle/waiting transitions and ends only when the thread exits, fails, reaches the requested timeout, or the caller interrupts it.
+
+Approval requests use `request approve` or `request decline`. Plan mode and other `request_user_input` interactions use an answer map. Every question ID maps to an `answers` array, which also supports multi-select questions:
+
+```bash
+node "$CWB_CLI" request answer "$THREAD_ID" "$REQUEST_ID" --input-file - <<'JSON'
+{
+  "architecture": {"answers": ["Unix socket"]},
+  "features": {"answers": ["JSONL events", "terminal screenshots"]}
+}
+JSON
+```
+
+`request resolve` accepts the raw resolution body and is available for input/choice request variants:
+
+```bash
+node "$CWB_CLI" request resolve "$THREAD_ID" "$REQUEST_ID" \
+  --input-json '{"value":"continue"}'
+```
+
+Terminal input requires an explicit lease: run `terminal takeover`, send one or more `terminal input` commands, and finish with `terminal release`. Screenshots are decoded to the path passed to `--output` and created with owner-only permissions.
+
+### Exit codes
+
+| Code | Meaning |
+| ---: | --- |
+| 0 | Command succeeded |
+| 2 | Invalid command, argument, or input schema |
+| 3 | Daemon is not running or cannot be reached; `status` also uses 3 for `not_running` |
+| 4 | Host, thread, or request was not found |
+| 5 | Conflict, invalid state, or request already resolved |
+| 6 | Authentication, permission, or security failure |
+| 7 | SSH, Codex, or remote runtime failure |
+| 8 | Timeout |
+| 9 | Control protocol incompatibility |
+| 10 | Unexpected internal failure |
+
 ## Development and verification
 
 ```bash

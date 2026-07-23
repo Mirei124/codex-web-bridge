@@ -21,7 +21,15 @@ export function dataDir(env: NodeJS.ProcessEnv = process.env): string {
 
 export function paths(env: NodeJS.ProcessEnv = process.env) {
   const root = dataDir(env);
-  return { root, config: join(root, "config.json"), database: join(root, "bridge.sqlite3"), pid: join(root, "daemon.pid"), ready: join(root, "daemon.ready"), log: join(root, "daemon.log") };
+  return {
+    root,
+    config: join(root, "config.json"),
+    database: join(root, "bridge.sqlite3"),
+    pid: join(root, "daemon.pid"),
+    ready: join(root, "daemon.ready"),
+    log: join(root, "daemon.log"),
+    controlSocket: join(root, "control.sock"),
+  };
 }
 
 export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<AppConfig> {

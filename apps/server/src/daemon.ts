@@ -3,6 +3,7 @@ import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { loadConfig, paths } from "@cwb/config";
 import { Storage } from "@cwb/storage";
 import { buildServer } from "./server.js";
+import { ControlServer } from "./control.js";
 
 const config = await loadConfig();
 const files = paths();
@@ -15,10 +16,14 @@ try {
 }
 await writeFile(files.pid, JSON.stringify({ pid: process.pid, marker: "codex-web-bridge-daemon" }), { mode: 0o600 });
 const storage = new Storage(files.database);
-const app = await buildServer(config, storage);
+let control: ControlServer | undefined;
+const app = await buildServer(config, storage, { eventSink: event => control?.publish(event) });
+control = new ControlServer(files.controlSocket, config, storage, app);
+await control.listen();
 let closing = false;
 async function shutdown() {
   if (closing) return; closing = true;
+  await control?.close();
   await app.close(); storage.close();
   await unlink(files.pid).catch(() => undefined); await unlink(files.ready).catch(() => undefined);
   process.exit(0);

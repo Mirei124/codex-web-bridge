@@ -12,6 +12,11 @@ function run(args: string[], env: NodeJS.ProcessEnv) {
   return spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8", timeout: 10_000 });
 }
 
+function output(result: ReturnType<typeof run>) {
+  expect(result.status, result.stderr).toBe(0);
+  return JSON.parse(result.stdout) as { schemaVersion: number; ok: boolean; kind: string; data: Record<string, unknown> };
+}
+
 async function freePort(): Promise<number> {
   return new Promise((resolvePort, reject) => {
     const server = createServer();
@@ -39,15 +44,15 @@ describe("built CLI and daemon", () => {
     const env = { ...process.env, CWB_DATA_DIR: dataDir };
 
     const started = run(["start", "--password", "test-password", "--origin", origin, "--port", String(port)], env);
-    expect(started.status, started.stderr).toBe(0);
-    expect(started.stdout).toMatch(/started \(PID \d+\)/);
+    expect(output(started)).toMatchObject({ schemaVersion: 1, ok: true, kind: "result", data: { state: "running" } });
 
     const pidFile = JSON.parse(await readFile(join(dataDir, "daemon.pid"), "utf8")) as { pid: number; marker: string };
     expect(pidFile.marker).toBe("codex-web-bridge-daemon");
     expect(pidFile.pid).toBeGreaterThan(1);
 
-    expect(run(["status"], env).stdout).toContain(`running (PID ${pidFile.pid})`);
-    expect(run(["dashboard"], env).stdout.trim()).toBe(origin);
+    expect(output(run(["status"], env))).toMatchObject({ data: { state: "running", pid: pidFile.pid } });
+    expect(output(run(["dashboard"], env))).toMatchObject({ data: { url: origin } });
+    expect(output(run(["host", "list"], env))).toMatchObject({ data: [] });
 
     const headers = { "x-forwarded-proto": "https", origin };
     const dashboard = await fetch(`http://127.0.0.1:${port}/`, { headers });
@@ -63,10 +68,20 @@ describe("built CLI and daemon", () => {
     expect(login.headers.get("set-cookie")).toContain("Secure");
 
     const stopped = run(["stop"], env);
-    expect(stopped.status, stopped.stderr).toBe(0);
-    expect(stopped.stdout).toContain("stopped");
+    expect(output(stopped)).toMatchObject({ data: { state: "stopped", pid: pidFile.pid } });
     const status = run(["status"], env);
     expect(status.status).toBe(3);
-    expect(status.stdout).toContain("not running");
+    expect(JSON.parse(status.stdout)).toMatchObject({ schemaVersion: 1, ok: true, kind: "result", data: { state: "not_running" } });
   }, 20_000);
+
+  it("reports an unavailable daemon as structured JSON", async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "cwb-cli-test-"));
+    const result = run(["host", "list"], { ...process.env, CWB_DATA_DIR: dataDir });
+    expect(result.status).toBe(3);
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      schemaVersion: 1,
+      ok: false,
+      error: { code: "daemon_unavailable", retryable: true },
+    });
+  });
 });
