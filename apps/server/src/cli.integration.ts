@@ -45,6 +45,11 @@ describe("built CLI and daemon", () => {
 
     const json = spawnSync(process.execPath, [cli, "help", "--json"], { env: process.env, encoding: "utf8" });
     expect(output(json)).toMatchObject({ schemaVersion: 1, ok: true, kind: "result" });
+
+    const focused = spawnSync(process.execPath, [cli, "host", "add", "--help"], { env: process.env, encoding: "utf8" });
+    expect(focused.status).toBe(0);
+    expect(focused.stdout).toMatch(/^Usage: codex-web-bridge host add/);
+    expect(focused.stdout).not.toContain("thread create");
   });
 
   it("starts, reports status, serves dashboard/API, prints the URL, and stops safely", async () => {

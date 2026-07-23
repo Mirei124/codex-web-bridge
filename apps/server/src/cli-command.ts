@@ -46,8 +46,84 @@ const usage = `Usage:
 Global options: --json
 Use - as an input/text/data file to read stdin. Human-readable output is the default; --json emits one structured JSON value per line.`;
 
-export function helpText(): string {
-  return usage;
+const commandHelp: Record<string, string> = {
+  start: `Usage: codex-web-bridge start [--password VALUE|--reset-password] [--origin URL] [--port PORT] [--accept-risk] [--foreground] [--json]
+
+Start the daemon. The first start generates a dashboard password unless --password is supplied.
+Use --reset-password to replace an existing password while starting.
+The daemon listens on 127.0.0.1 by default; --accept-risk binds to 0.0.0.0 over HTTP.`,
+  stop: "Usage: codex-web-bridge stop [--json]\n\nStop the daemon without destroying remote tmux or Codex history.",
+  restart: `Usage: codex-web-bridge restart [--password VALUE|--reset-password] [--origin URL] [--port PORT] [--accept-risk] [--foreground] [--json]
+
+Restart the daemon. Remote tmux sessions remain running.`,
+  status: "Usage: codex-web-bridge status [--json]\n\nShow whether the daemon is running and its PID.",
+  dashboard: "Usage: codex-web-bridge dashboard [--json]\n\nPrint the configured dashboard URL.",
+  password: "Usage: codex-web-bridge password reset [--json]\n\nGenerate a new dashboard password and restart a running daemon.",
+  "password reset": "Usage: codex-web-bridge password reset [--json]\n\nGenerate and print a new dashboard password. A running daemon is restarted automatically.",
+  host: `Usage:
+  codex-web-bridge host list
+  codex-web-bridge host get HOST_ID
+  codex-web-bridge host codex-threads HOST_ID
+  codex-web-bridge host add USER@HOST[:PORT] [OPTIONS]
+  codex-web-bridge host upsert [OPTIONS]`,
+  "host list": "Usage: codex-web-bridge host list [--json]\n\nList configured SSH hosts.",
+  "host get": "Usage: codex-web-bridge host get HOST_ID [--json]\n\nShow one configured SSH host.",
+  "host codex-threads": "Usage: codex-web-bridge host codex-threads HOST_ID [--json]\n\nList Codex threads discovered on a host.",
+  "host add": `Usage: codex-web-bridge host add USER@HOST[:PORT] [--id ID] [--name NAME]
+  [--identity-file ABSOLUTE_PATH] [--password|--password-stdin|--clear-password]
+  [--accept-host-key] [--json]
+
+Add a host, verify its SSH host key, and optionally supply an in-memory password.`,
+  "host upsert": `Usage:
+  codex-web-bridge host upsert --id ID --name NAME --hostname HOST --username USER
+    [--identity-file ABSOLUTE_PATH] [--port PORT] [--accept-host-key] [--json]
+  codex-web-bridge host upsert (--input-json JSON | --input-file PATH) [--json]
+
+Create or update a host using explicit fields or a JSON object.`,
+  thread: `Usage:
+  codex-web-bridge thread list
+  codex-web-bridge thread get THREAD_ID
+  codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH
+  codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH
+  codex-web-bridge thread send|wait|watch|interrupt|exit ...`,
+  "thread list": "Usage: codex-web-bridge thread list [--json]\n\nList bridge-managed Codex threads.",
+  "thread get": "Usage: codex-web-bridge thread get THREAD_ID [--json]\n\nShow messages, pending requests, terminal state, and metadata.",
+  "thread create": "Usage: codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--json]\n\nCreate a new Codex thread.",
+  "thread resume": "Usage: codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--json]\n\nResume an existing Codex thread.",
+  "thread send": "Usage: codex-web-bridge thread send THREAD_ID (--text TEXT | --text-file PATH) [--json]\n\nSend a new user message.",
+  "thread wait": "Usage: codex-web-bridge thread wait THREAD_ID [--timeout MILLISECONDS] [--json]\n\nWait until the thread becomes idle, waiting, exited, or errored.",
+  "thread watch": "Usage: codex-web-bridge thread watch THREAD_ID [--timeout MILLISECONDS] [--json]\n\nStream thread events until exit, error, timeout, or interruption.",
+  "thread interrupt": "Usage: codex-web-bridge thread interrupt THREAD_ID [--json]\n\nInterrupt the active Codex turn.",
+  "thread exit": "Usage: codex-web-bridge thread exit THREAD_ID [--json]\n\nStop the tmux-backed runtime without deleting Codex history.",
+  request: `Usage:
+  codex-web-bridge request list THREAD_ID
+  codex-web-bridge request get THREAD_ID REQUEST_ID
+  codex-web-bridge request approve|decline THREAD_ID REQUEST_ID
+  codex-web-bridge request answer|resolve THREAD_ID REQUEST_ID (--input-json JSON | --input-file PATH)`,
+  "request list": "Usage: codex-web-bridge request list THREAD_ID [--json]\n\nList pending requests for a thread.",
+  "request get": "Usage: codex-web-bridge request get THREAD_ID REQUEST_ID [--json]\n\nShow a pending request.",
+  "request approve": "Usage: codex-web-bridge request approve THREAD_ID REQUEST_ID [--json]\n\nApprove a pending approval request.",
+  "request decline": "Usage: codex-web-bridge request decline THREAD_ID REQUEST_ID [--json]\n\nDecline a pending approval request.",
+  "request answer": "Usage: codex-web-bridge request answer THREAD_ID REQUEST_ID (--input-json JSON | --input-file PATH) [--json]\n\nAnswer Plan-mode or request_user_input questions.",
+  "request resolve": "Usage: codex-web-bridge request resolve THREAD_ID REQUEST_ID (--input-json JSON | --input-file PATH) [--json]\n\nResolve a pending request with a structured response.",
+  terminal: `Usage:
+  codex-web-bridge terminal screenshot THREAD_ID --output PNG_PATH
+  codex-web-bridge terminal watch THREAD_ID [--timeout MILLISECONDS]
+  codex-web-bridge terminal takeover|release THREAD_ID
+  codex-web-bridge terminal input THREAD_ID (--data TEXT | --data-file PATH)`,
+  "terminal screenshot": "Usage: codex-web-bridge terminal screenshot THREAD_ID --output PNG_PATH [--json]\n\nRender the current terminal to a PNG file.",
+  "terminal watch": "Usage: codex-web-bridge terminal watch THREAD_ID [--timeout MILLISECONDS] [--json]\n\nStream raw terminal output. Status messages are written to stderr.",
+  "terminal takeover": "Usage: codex-web-bridge terminal takeover THREAD_ID [--json]\n\nAcquire a temporary terminal input lease.",
+  "terminal release": "Usage: codex-web-bridge terminal release THREAD_ID [--json]\n\nRelease the terminal input lease.",
+  "terminal input": "Usage: codex-web-bridge terminal input THREAD_ID (--data TEXT | --data-file PATH) [--json]\n\nSend input while holding the terminal takeover lease.",
+};
+
+export function helpText(argv: string[] = []): string {
+  const words = argv.filter(value => !value.startsWith("--")).slice(0, 2);
+  if (words[0] === "daemon" && words[1]) {
+    return commandHelp[words[1] === "url" ? "dashboard" : words[1]] ?? usage;
+  }
+  return commandHelp[words.join(" ")] ?? commandHelp[words[0] ?? ""] ?? usage;
 }
 
 function splitOptions(args: string[]): { positional: string[]; options: Options } {

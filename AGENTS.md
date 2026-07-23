@@ -9,3 +9,7 @@
   of daemon startup. If startup fails before the credential can be delivered, remove
   only the configuration created by that invocation, and only after confirming that
   its complete contents have not been replaced or modified concurrently.
+- Commit completed work in small, coherent checkpoints. Once a self-contained portion
+  of a change is implemented and its relevant checks pass, create a Git commit before
+  starting the next independent portion. Do not commit known-broken or partially
+  implemented states merely to create a checkpoint.

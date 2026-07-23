@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { parseBusinessCommand, UsageError } from "./cli-command.js";
+import { helpText, parseBusinessCommand, UsageError } from "./cli-command.js";
 
 describe("LLM-oriented CLI command parsing", () => {
+  it("returns focused help for command groups and concrete subcommands", () => {
+    expect(helpText(["host", "--help"])).toContain("host list");
+    expect(helpText(["host", "--help"])).not.toContain("thread create");
+    expect(helpText(["host", "add", "--help"])).toMatch(/^Usage: codex-web-bridge host add/);
+    expect(helpText(["host", "add", "--help"])).not.toContain("host list");
+    expect(helpText(["start", "--help"])).toMatch(/^Usage: codex-web-bridge start/);
+  });
+
   it("parses the primary SSH target form with optional in-memory password and host-key acceptance", () => {
     expect(parseBusinessCommand([
       "host", "add", "codex@machine-a.example:2222", "--id", "machine-a", "--name", "Machine A",

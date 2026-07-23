@@ -356,6 +356,11 @@ async function runBusiness(args: string[]): Promise<void> {
 async function main(): Promise<void> {
   let args = [...rawArgs];
   if (args[0] === "--json") args = [...args.slice(1), "--json"];
+  if (args.includes("--help")) {
+    const json = args.includes("--json");
+    success({ usage: helpText(args) }, json, "result", "help");
+    return;
+  }
   if (args[0] === "daemon") {
     const nested = args[1];
     if (nested === "url") args = ["dashboard", ...args.slice(2)];
