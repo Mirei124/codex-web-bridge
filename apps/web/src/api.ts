@@ -18,8 +18,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "content-type": "application/json", ...(init?.method && init.method !== "GET" && csrfToken ? { "x-csrf-token": csrfToken } : {}), ...init?.headers },
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as { message?: string };
-    throw new ApiError(response.status, body.message ?? `Request failed (${response.status})`);
+    const body = await response.json().catch(() => ({})) as { message?: string; error?: string };
+    throw new ApiError(response.status, body.message ?? body.error ?? `Request failed (${response.status})`);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;

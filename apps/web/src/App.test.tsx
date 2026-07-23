@@ -102,6 +102,21 @@ describe("dashboard security and operations", () => {
     expect(JSON.parse(String(resume.body))).toEqual({ hostId: "a", codexThreadId: "codex-123", cwd: "/repo/resumed" });
   });
 
+  it("adds a password-authenticated host from the main panel", async () => {
+    const fetch = authenticatedFetch(); vi.stubGlobal("fetch", fetch); render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "添加主机" }));
+    for (const [label, value] of [["主机 ID","new-a"],["名称","New A"],["主机名或 IP","a.internal"],["SSH 用户名","codex"],["主机密钥指纹",`SHA256:${"A".repeat(43)}`],["SSH 密码（可选）","memory-only"]]) {
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    }
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(fetch.mock.calls.some(call => call[0] === "/api/hosts" && (call[1] as RequestInit | undefined)?.method === "POST")).toBe(true));
+    const saved = fetch.mock.calls.find(call => call[0] === "/api/hosts" && (call[1] as RequestInit | undefined)?.method === "POST")![1] as RequestInit;
+    expect(JSON.parse(String(saved.body))).toEqual({
+      id: "new-a", name: "New A", hostname: "a.internal", port: 22, username: "codex",
+      hostKeySha256: `SHA256:${"A".repeat(43)}`, identityFile: "", password: "memory-only",
+    });
+  });
+
   it("discovers host Codex threads and fills thread ID and cwd while retaining manual fields", async () => {
     const fetch = authenticatedFetch(); vi.stubGlobal("fetch", fetch); render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "恢复" }));
@@ -130,6 +145,23 @@ describe("dashboard security and operations", () => {
       expect(paths).toContainEqual(["/api/threads/t/interrupt", "POST"]);
       expect(paths).toContainEqual(["/api/threads/t/exit", "POST"]);
     });
+    expect(screen.getByRole("button", { name: "已退出" })).toBeDisabled();
+    expect(screen.getByPlaceholderText("该会话已退出")).toBeDisabled();
+  });
+
+  it("shows an exit failure and keeps the selected thread active", async () => {
+    const fetch = authenticatedFetch();
+    fetch.mockImplementationOnce(async () => response({ authenticated: true, csrfToken: "csrf-token" }));
+    vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+      const path = typeof input === "string" ? input : input.toString();
+      if (path === "/api/threads/t/exit") return response({ message: "tmux stop failed" }, 500);
+      return fetch(input, init);
+    });
+    render(<App />); fireEvent.click(await screen.findByText("Bridge")); await screen.findByText("Ready");
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    fireEvent.click(screen.getByRole("button", { name: "退出会话" }));
+    expect(await screen.findByText("tmux stop failed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "退出会话" })).toBeEnabled();
   });
 
   it("keeps terminal input read-only until an explicit takeover event", async () => {

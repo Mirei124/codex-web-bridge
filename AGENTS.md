@@ -13,3 +13,6 @@
   of a change is implemented and its relevant checks pass, create a Git commit before
   starting the next independent portion. Do not commit known-broken or partially
   implemented states merely to create a checkpoint.
+- Keep explicit lifecycle operations strict: if a user asks to stop or destroy a
+  remote resource, propagate failure and update persisted state only after success.
+  Reserve best-effort error suppression for rollback and shutdown cleanup paths.
