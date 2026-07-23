@@ -20,6 +20,15 @@ export interface ServerOptions {
   eventSink?: (event: ServerEvent) => void;
 }
 
+interface EmbeddedWebAsset {
+  path: string;
+  contentType: string;
+}
+
+declare global {
+  var __CWB_EMBEDDED_WEB__: Record<string, EmbeddedWebAsset> | undefined;
+}
+
 function isAllowedRequest(request: FastifyRequest, config: AppConfig): boolean {
   const remote = request.socket.remoteAddress?.replace(/^::ffff:/, "");
   const forwardedProto = request.headers["x-forwarded-proto"];
@@ -40,6 +49,7 @@ export async function buildServer(config: AppConfig, storage: Storage, options: 
   function activeLease(threadId:string){const lease=takeover.get(threadId);if(lease?.expiresAt!==undefined&&lease.expiresAt<=Date.now()){takeover.delete(threadId);return;}return lease;}
   await app.register(cookie);
   const webRoot = options.webRoot === undefined ? resolve(dirname(fileURLToPath(import.meta.url)), "../../web/dist") : options.webRoot;
+  const embeddedWeb = options.webRoot === undefined ? globalThis.__CWB_EMBEDDED_WEB__ : undefined;
 
   app.addHook("onRequest", async (request, reply) => {
     if (!isAllowedRequest(request, config)) return reply.code(404).send();
@@ -94,7 +104,7 @@ export async function buildServer(config: AppConfig, storage: Storage, options: 
   runtime.events.on("connectionGenerationChanged",invalidatePending);
   for(const thread of storage.threads().filter(thread=>thread.status!=="exited")){const host=storage.host(thread.hostId);if(host)runtime.reconnect(host,thread).catch(()=>storage.updateThread(thread.id,{status:"error",updatedAt:Date.now()}));}
   app.addHook("onClose",async()=>{for(const socket of sockets.keys())socket.close();wss.close();await runtime.close();});
-  if(webRoot&&existsSync(webRoot)) app.setNotFoundHandler(async(request,reply)=>{const pathname=new URL(request.url,config.publicOrigin).pathname;if(pathname.startsWith("/api/"))return reply.code(404).send({error:"not found"});let path:string;try{path=decodeURIComponent(pathname)==="/"?"index.html":decodeURIComponent(pathname).slice(1);}catch{return reply.code(400).send();}const root=resolve(webRoot),target=resolve(root,path);if(target!==resolve(root,"index.html")&&!target.startsWith(root+"/"))return reply.code(404).send();try{const body=await readFile(target);const extension=target.split(".").pop();return reply.type(extension==="js"?"application/javascript":extension==="css"?"text/css":extension==="html"?"text/html":"application/octet-stream").send(body);}catch{return reply.type("text/html").send(await readFile(resolve(root,"index.html")));}});
+  if(embeddedWeb||webRoot&&existsSync(webRoot)) app.setNotFoundHandler(async(request,reply)=>{const pathname=new URL(request.url,config.publicOrigin).pathname;if(pathname.startsWith("/api/"))return reply.code(404).send({error:"not found"});let path:string;try{path=decodeURIComponent(pathname)==="/"?"index.html":decodeURIComponent(pathname).slice(1);}catch{return reply.code(400).send();}if(embeddedWeb){const asset=embeddedWeb[path];if(asset)return reply.type(asset.contentType).send(await readFile(asset.path));if(path.includes("."))return reply.code(404).send();const index=embeddedWeb["index.html"]!;return reply.type(index.contentType).send(await readFile(index.path));}const root=resolve(webRoot as string),target=resolve(root,path);if(target!==resolve(root,"index.html")&&!target.startsWith(root+"/"))return reply.code(404).send();try{const body=await readFile(target);const extension=target.split(".").pop();return reply.type(extension==="js"?"application/javascript":extension==="css"?"text/css":extension==="html"?"text/html":"application/octet-stream").send(body);}catch{return reply.type("text/html").send(await readFile(resolve(root,"index.html")));}});
   return app;
 }
 

@@ -1,5 +1,24 @@
-import Database from "better-sqlite3";
 import { chmodSync } from "node:fs";
+
+interface Statement {
+  run(...params: unknown[]): { changes: number };
+  get(...params: unknown[]): unknown;
+  all(...params: unknown[]): unknown[];
+}
+
+interface DatabaseConnection {
+  exec(sql: string): void;
+  prepare(sql: string): Statement;
+  close(): void;
+}
+
+interface DatabaseConstructor {
+  new(path: string): DatabaseConnection;
+}
+
+const Database = (process.versions.bun
+  ? (await import("bun:sqlite")).Database
+  : (await import("better-sqlite3")).default) as DatabaseConstructor;
 
 export interface SessionRecord { id: string; csrfToken: string; createdAt: number; expiresAt: number }
 export interface HostRecord { id: string; name: string; hostname: string; port: number; username: string; hostKeySha256: string; identityFile: string; createdAt: number }
@@ -8,12 +27,12 @@ export interface MessageRecord { id: string; threadId: string; role: string; tex
 export interface PendingRecord { id: string; threadId: string; payload: string; rpcId: string; method: string; params: string; resolvedAt?: number; createdAt: number }
 
 export class Storage {
-  readonly db: Database.Database;
+  readonly db: DatabaseConnection;
   constructor(path: string) {
     this.db = new Database(path);
     if (path !== ":memory:") chmodSync(path, 0o600);
-    this.db.pragma("journal_mode = WAL");
-    this.db.pragma("foreign_keys = ON");
+    this.db.exec("PRAGMA journal_mode = WAL");
+    this.db.exec("PRAGMA foreign_keys = ON");
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS login_sessions (
         id TEXT PRIMARY KEY,
@@ -43,10 +62,10 @@ export class Storage {
         payload TEXT NOT NULL, rpc_id TEXT NOT NULL DEFAULT 'null', method TEXT NOT NULL DEFAULT '', params TEXT NOT NULL DEFAULT '{}', resolved_at INTEGER, created_at INTEGER NOT NULL
       );
     `);
-    const threadColumns = this.db.pragma("table_info(threads)") as Array<{ name: string }>;
+    const threadColumns = this.db.prepare("PRAGMA table_info(threads)").all() as Array<{ name: string }>;
     if (!threadColumns.some(column => column.name === "title")) this.db.exec("ALTER TABLE threads ADD COLUMN title TEXT NOT NULL DEFAULT 'Codex thread'");
     if (!threadColumns.some(column => column.name === "remote_port")) this.db.exec("ALTER TABLE threads ADD COLUMN remote_port INTEGER");
-    const pendingColumns=this.db.pragma("table_info(pending_requests)") as Array<{name:string}>;
+    const pendingColumns=this.db.prepare("PRAGMA table_info(pending_requests)").all() as Array<{name:string}>;
     if(!pendingColumns.some(column=>column.name==="rpc_id"))this.db.exec("ALTER TABLE pending_requests ADD COLUMN rpc_id TEXT NOT NULL DEFAULT 'null'");
     if(!pendingColumns.some(column=>column.name==="method"))this.db.exec("ALTER TABLE pending_requests ADD COLUMN method TEXT NOT NULL DEFAULT ''");
     if(!pendingColumns.some(column=>column.name==="params"))this.db.exec("ALTER TABLE pending_requests ADD COLUMN params TEXT NOT NULL DEFAULT '{}'");

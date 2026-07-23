@@ -6,7 +6,7 @@ By default the daemon listens only on `127.0.0.1` and provides a direct HTTP das
 
 ## Requirements
 
-- Machine B: Linux, Node.js 22+, pnpm 11, and network access to A over SSH. Caddy is required only for the recommended public HTTPS deployment.
+- Machine B: Linux and network access to A over SSH. Building from source additionally requires Node.js 22+ and pnpm 11. Caddy is required only for the recommended public HTTPS deployment.
 - Machine A: SSH server, tmux, and the pinned compatible Codex CLI available to the configured SSH user.
 - A dedicated SSH key on B and a verified SHA-256 host-key fingerprint for A.
 
@@ -26,6 +26,21 @@ After building, `pnpm cwb <command>` runs the compiled CLI. The built entry poin
 CWB_CLI="$PWD/apps/server/dist/cli.js"
 node "$CWB_CLI" help
 ```
+
+To build a single executable containing the Bun runtime, server, Dashboard assets, and
+native dependencies:
+
+```bash
+pnpm build:binary
+./release/codex-web-bridge-linux-x64-gnu help
+```
+
+The output filename follows the build host's operating system, CPU architecture, and
+on Linux its libc ABI (`gnu` or `musl`).
+The executable does not require Node.js, pnpm, `node_modules`, or separate Dashboard
+files on the destination machine. Native dependencies make it platform-specific: the
+current build supports only the build host's OS, architecture, and libc ABI. Build and
+test a separate artifact for every additional target.
 
 Do not set `CWB_DATA_DIR` to a shared or web-served directory. By default state is stored at `~/.local/state/codex-web-bridge` with restricted permissions. It contains the password hash, session secret, SQLite database, PID, readiness marker, and daemon log.
 

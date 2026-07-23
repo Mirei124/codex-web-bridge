@@ -14,6 +14,10 @@ import { rollbackCreatedConfig, terminateSpawnedDaemon } from "./startup-transac
 type DaemonCommand = "start" | "stop" | "restart" | "status" | "dashboard" | "help";
 const rawArgs = process.argv.slice(2);
 
+declare global {
+  var __CWB_STANDALONE__: boolean | undefined;
+}
+
 function success(
   data: unknown,
   json = false,
@@ -69,7 +73,7 @@ async function alive(value: number): Promise<boolean> {
     process.kill(value, 0);
     if (process.platform === "linux") {
       const command = await readFile(`/proc/${value}/cmdline`, "utf8");
-      return command.includes("daemon.js");
+      return command.includes("daemon.js") || command.includes("__daemon");
     }
     return true;
   } catch {
@@ -176,7 +180,10 @@ async function start(args: string[], json: boolean, foreground: boolean, emit = 
     }
     const log = await open(paths().log, "a", 0o600);
     try {
-      child = spawn(process.execPath, [fileURLToPath(new URL("./daemon.js", import.meta.url))], {
+      const daemonArgs = globalThis.__CWB_STANDALONE__
+        ? ["__daemon"]
+        : [fileURLToPath(new URL("./daemon.js", import.meta.url))];
+      child = spawn(process.execPath, daemonArgs, {
         detached: true,
         stdio: ["ignore", log.fd, log.fd],
         env: process.env,
@@ -355,6 +362,10 @@ async function runBusiness(args: string[]): Promise<void> {
 
 async function main(): Promise<void> {
   let args = [...rawArgs];
+  if (args.length === 1 && args[0] === "__daemon") {
+    await import("./daemon.js");
+    return;
+  }
   if (args[0] === "--json") args = [...args.slice(1), "--json"];
   if (args.includes("--help")) {
     const json = args.includes("--json");
