@@ -1,0 +1,142 @@
+export type HostStatus = "online" | "offline" | "connecting";
+export type ThreadStatus = "idle" | "running" | "waiting" | "exited" | "error";
+
+export interface HostSummary {
+  id: string;
+  name: string;
+  address: string;
+  status: HostStatus;
+  hostname?: string;
+  port?: number;
+  username?: string;
+  hostKeySha256?: string;
+  identityFile?: string;
+}
+
+export interface HostConfig {
+  id: string;
+  name: string;
+  hostname: string;
+  port: number;
+  username: string;
+  hostKeySha256: string;
+  identityFile: string;
+}
+
+export interface CodexThreadSummary {
+  id: string;
+  title?: string;
+  cwd?: string;
+  updatedAt?: string;
+}
+
+export interface ThreadSummary {
+  id: string;
+  codexThreadId?: string;
+  hostId: string;
+  title: string;
+  cwd: string;
+  status: ThreadStatus;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  text: string;
+  streaming?: boolean;
+  createdAt: string;
+}
+
+export interface ChoiceOption {
+  label: string;
+  value: string;
+  description?: string;
+}
+
+export interface ChoiceRequest {
+  kind: "choice";
+  requestId: string;
+  title: string;
+  prompt: string;
+  options: ChoiceOption[];
+}
+
+export interface ApprovalRequest {
+  kind: "approval";
+  requestId: string;
+  title: string;
+  detail: string;
+  command?: string;
+  risk?: "low" | "medium" | "high";
+}
+
+export interface InputRequest {
+  kind: "input";
+  requestId: string;
+  title: string;
+  prompt: string;
+  placeholder?: string;
+}
+
+export interface QuestionItem {
+  id: string;
+  header: string;
+  prompt: string;
+  options?: ChoiceOption[];
+}
+
+export interface QuestionsRequest {
+  kind: "questions";
+  requestId: string;
+  title: string;
+  questions: QuestionItem[];
+}
+
+export type PendingRequest = ChoiceRequest | ApprovalRequest | InputRequest | QuestionsRequest;
+
+export interface ThreadDetail extends ThreadSummary {
+  messages: ChatMessage[];
+  pendingRequests: PendingRequest[];
+  terminal: { connected: boolean; takeover: boolean; owner?: string };
+}
+
+export interface LoginRequest { password: string }
+export interface SessionResponse { authenticated: boolean; csrfToken?: string }
+export interface CreateThreadRequest { hostId: string; cwd: string; title?: string }
+export interface ResumeThreadRequest { hostId: string; codexThreadId: string; cwd: string }
+export interface SendMessageRequest { text: string }
+export interface ResolveRequest {
+  value?: string;
+  approved?: boolean;
+  answers?: Record<string, { answers: string[] }>;
+}
+
+export type ServerEvent =
+  | { type: "snapshot"; thread: ThreadDetail }
+  | { type: "thread.updated"; thread: ThreadSummary }
+  | { type: "message.created"; threadId: string; message: ChatMessage }
+  | { type: "message.delta"; threadId: string; messageId: string; delta: string }
+  | { type: "message.completed"; threadId: string; messageId: string }
+  | { type: "request.created"; threadId: string; request: PendingRequest }
+  | { type: "request.resolved"; threadId: string; requestId: string }
+  | { type: "terminal.data"; threadId: string; data: string }
+  | { type: "terminal.state"; threadId: string; connected: boolean; takeover: boolean; owner?: string }
+  | { type: "error"; threadId?: string; message: string };
+
+export type ClientEvent =
+  | { type: "subscribe"; threadId: string }
+  | { type: "unsubscribe"; threadId: string }
+  | { type: "terminal.resize"; threadId: string; cols: number; rows: number }
+  | { type: "terminal.input"; threadId: string; data: string };
+
+export const apiRoutes = {
+  session: "/api/auth/session",
+  login: "/api/auth/login",
+  logout: "/api/auth/logout",
+  hosts: "/api/hosts",
+  threads: "/api/threads",
+  resumeThread: "/api/threads/resume",
+  events: "/api/events",
+  hostCodexThreads: (hostId: string) => `/api/hosts/${encodeURIComponent(hostId)}/codex-threads`,
+} as const;

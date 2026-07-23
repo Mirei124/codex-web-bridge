@@ -1,0 +1,27 @@
+{
+  "name": "@cwb/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "codex-web-bridge": "./dist/cli.js" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "pnpm --filter @cwb/web build && pnpm --filter @cwb/server build && vitest run --config vitest.integration.config.ts",
+    "dev": "tsx src/cli.ts start --foreground",
+    "cli": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@cwb/config": "workspace:*",
+    "@cwb/storage": "workspace:*",
+    "@cwb/protocol": "workspace:*",
+    "@cwb/codex-client": "workspace:*",
+    "@cwb/remote-runtime": "workspace:*",
+    "@fastify/cookie": "^11.0.2",
+    "@node-rs/argon2": "^2.0.2",
+    "fastify": "^5.3.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": { "@types/ws": "^8.5.13", "tsx": "^4.19.4" }
+}

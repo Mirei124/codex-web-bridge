@@ -1,0 +1,9 @@
+{
+  "name": "@cwb/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": { "typecheck": "tsc --noEmit --strict --moduleResolution bundler --module esnext --target es2022 src/index.ts", "test": "vitest run --passWithNoTests", "build": "tsc --noEmit --strict --moduleResolution bundler --module esnext --target es2022 src/index.ts" },
+  "devDependencies": { "typescript": "^5.8.3", "vitest": "^3.2.4" }
+}
