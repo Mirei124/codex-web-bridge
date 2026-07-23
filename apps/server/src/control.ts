@@ -1,5 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { chmod, lstat, mkdir, open, readFile, unlink, type FileHandle } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { appendFile, chmod, lstat, mkdir, open, readFile, unlink, type FileHandle } from "node:fs/promises";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import type { FastifyInstance, InjectOptions } from "fastify";
 import {
@@ -14,7 +15,7 @@ import {
   type ServerEvent,
   type ThreadDetail,
 } from "@cwb/protocol";
-import type { AppConfig } from "@cwb/config";
+import { paths, type AppConfig } from "@cwb/config";
 import type { Storage } from "@cwb/storage";
 
 interface ClientState {
@@ -169,7 +170,12 @@ export class ControlServer {
   private async dispatch(state: ClientState, requestId: string, method: ControlRequest["method"], params: Record<string, unknown>): Promise<unknown> {
     if (method === "host.list") return this.inject(state, "GET", apiRoutes.hosts);
     if (method === "host.get") return findById(await this.inject(state, "GET", apiRoutes.hosts), idParam(params), "HOST_NOT_FOUND");
-    if (method === "host.upsert") return this.inject(state, "POST", apiRoutes.hosts, params.host ?? params);
+    if (method === "host.upsert") {
+      const host = { ...((params.host ?? params) as Record<string, unknown>) };
+      const verified = await verifyHostKey(host, Boolean(host.acceptHostKey));
+      delete host.acceptHostKey;
+      return this.inject(state, "POST", apiRoutes.hosts, { ...host, hostKeySha256: verified.fingerprint });
+    }
     if (method === "host.codexThreads") return this.inject(state, "GET", apiRoutes.hostCodexThreads(idParam(params)));
     if (method === "thread.list") return this.inject(state, "GET", apiRoutes.threads);
     if (method === "thread.get") return this.thread(state, idParam(params));
@@ -305,13 +311,13 @@ export class ControlServer {
 const streaming = Symbol("streaming");
 
 class ControlFailure extends Error {
-  constructor(readonly code: string, message: string, readonly retryable: boolean) {
+  constructor(readonly code: string, message: string, readonly retryable: boolean, readonly details?: unknown) {
     super(message);
   }
 }
 
 function normalizeError(error: unknown): ControlError {
-  if (error instanceof ControlFailure) return { code: error.code, message: error.message, retryable: error.retryable };
+  if (error instanceof ControlFailure) return { code: error.code, message: error.message, retryable: error.retryable, ...(error.details === undefined ? {} : { details: error.details }) };
   return { code: "INTERNAL_ERROR", message: error instanceof Error ? error.message : String(error), retryable: false };
 }
 
@@ -338,6 +344,42 @@ function findById(value: unknown, id: string, code: string, key = "id"): unknown
   const match = value.find(item => item && typeof item === "object" && (item as Record<string, unknown>)[key] === id);
   if (!match) throw new ControlFailure(code, `${id} was not found`, false);
   return match;
+}
+
+async function verifyHostKey(host: Record<string, unknown>, accept: boolean): Promise<{ fingerprint: string }> {
+  if (typeof host.hostKeySha256 === "string" && /^SHA256:[A-Za-z0-9+/]{43}=?$/.test(host.hostKeySha256)) {
+    return { fingerprint: host.hostKeySha256 };
+  }
+  const hostname = stringParam(host, "hostname");
+  const port = typeof host.port === "number" ? host.port : 22;
+  const output = await new Promise<string>((resolve, reject) => {
+    const child = spawn("ssh-keyscan", ["-T", "5", "-p", String(port), hostname], { stdio: ["ignore", "pipe", "ignore"] });
+    let stdout = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", chunk => stdout += chunk);
+    child.once("error", reject);
+    child.once("close", code => code === 0 && stdout.trim()
+      ? resolve(stdout)
+      : reject(new ControlFailure("SSH_HOST_KEY_SCAN_FAILED", `unable to read SSH host key for ${hostname}:${port}`, true)));
+  });
+  const candidates = output.split("\n").filter(line => line && !line.startsWith("#"))
+    .map(line => line.trim().split(/\s+/)).filter(parts => parts.length >= 3);
+  const selected = candidates.find(parts => parts[1] === "ssh-ed25519") ?? candidates[0];
+  if (!selected) throw new ControlFailure("SSH_HOST_KEY_SCAN_FAILED", `unable to read SSH host key for ${hostname}:${port}`, true);
+  const keyName = port === 22 ? hostname : `[${hostname}]:${port}`;
+  const entry = `${keyName} ${selected[1]} ${selected[2]}`;
+  const fingerprint = `SHA256:${createHash("sha256").update(Buffer.from(selected[2]!, "base64")).digest("base64").replace(/=+$/, "")}`;
+  let existing = "";
+  try { existing = await readFile(paths().knownHosts, "utf8"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  const known = existing.split("\n").find(line => line.startsWith(`${keyName} `));
+  if (known && known !== entry) throw new ControlFailure("HOST_KEY_CHANGED", `SSH host key changed for ${hostname}:${port}`, false, { fingerprint });
+  if (!known) {
+    if (!accept) throw new ControlFailure("HOST_KEY_UNKNOWN", `SSH host key is unknown for ${hostname}:${port}`, false, { fingerprint });
+    await appendFile(paths().knownHosts, `${entry}\n`, { mode: 0o600 });
+    await chmod(paths().knownHosts, 0o600);
+  }
+  return { fingerprint };
 }
 
 function endsSubscription(mode: Subscription["mode"], status: ThreadDetail["status"]): boolean {

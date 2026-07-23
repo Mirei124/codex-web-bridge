@@ -9,7 +9,7 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "dev": "pnpm --filter @cwb/server dev",
-    "cwb": "pnpm --filter @cwb/server cli"
+    "cwb": "node apps/server/dist/cli.js"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

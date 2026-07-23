@@ -22,6 +22,17 @@ afterEach(async()=>{vi.useRealTimers();if(directory)await rm(directory,{recursiv
 async function fixture(){directory=await mkdtemp(join(tmpdir(),"cwb-runtime-test-"));const identityFile=join(directory,"key");await writeFile(identityFile,"key");const host:HostRecord={id:"host",name:"A",hostname:"a",port:22,username:"u",hostKeySha256:`SHA256:${Buffer.alloc(32,1).toString("base64").replace(/=+$/,"" )}`,identityFile,createdAt:1};const thread:ThreadRecord={id:"thread",hostId:host.id,tmuxSession:"cwb-thread",remotePort:45678,workingDirectory:"/work",title:"t",status:"idle",createdAt:1,updatedAt:1};return{host,thread};}
 
 describe("runtime lifecycle reliability",()=>{
+  it("keeps an SSH password in manager memory and passes it to ssh2 without requiring an identity file",async()=>{
+    const{host,thread}=await fixture();host.identityFile="";let captured:Record<string,unknown>|undefined;
+    const ssh=new FakeSsh(),runtime=new FakeRuntime(),manager=new HostRuntimeManager({
+      sshFactory:config=>{captured=config as unknown as Record<string,unknown>;return ssh as unknown as SshConnection;},
+      runtimeFactory:()=>runtime as unknown as TmuxCodexRuntime,
+    });
+    manager.setHostPassword(host.id,"memory-only");
+    await manager.exit(thread,host);
+    expect(captured).toMatchObject({host:"a",username:"u",password:"memory-only"});
+    expect(captured).not.toHaveProperty("privateKey");
+  });
   it("keeps a fresh empty Codex thread headless until its first accepted turn",async()=>{const{host,thread}=await fixture(),ssh=new FakeSsh(),runtime=new FakeRuntime(),client=new FakeClient(),manager=new HostRuntimeManager({sshFactory:()=>ssh as unknown as SshConnection,runtimeFactory:()=>runtime as unknown as TmuxCodexRuntime,clientFactory:()=>client as unknown as CodexClient});const codexId=await manager.create(host,thread);expect(codexId).toBe("codex-1");expect(runtime.calls).toEqual([]);await manager.send({...thread,codexThreadId:codexId},"hello");expect(client.calls).toEqual(["startTurn"]);expect(runtime.calls).toEqual(["attachViewer","terminalStream"]);await manager.close();});
   it("cleans every opened resource and a newly-created tmux when thread/start fails",async()=>{const{host,thread}=await fixture(),ssh=new FakeSsh(),runtime=new FakeRuntime(),client=new FakeClient();client.failCreate=true;const manager=new HostRuntimeManager({sshFactory:()=>ssh as unknown as SshConnection,runtimeFactory:()=>runtime as unknown as TmuxCodexRuntime,clientFactory:()=>client as unknown as CodexClient});await expect(manager.create(host,thread)).rejects.toThrow("thread/start failed");expect(client.closed).toBe(true);expect(ssh.forwardClosed).toBe(true);expect(ssh.closed).toBe(true);expect(runtime.stopped).toBe(true);});
   it("uses temporary pinned SSH to stop an inactive tmux",async()=>{const{host,thread}=await fixture(),ssh=new FakeSsh(),runtime=new FakeRuntime(),manager=new HostRuntimeManager({sshFactory:()=>ssh as unknown as SshConnection,runtimeFactory:()=>runtime as unknown as TmuxCodexRuntime});await manager.exit(thread,host);expect(runtime.stopped).toBe(true);expect(ssh.closed).toBe(true);});

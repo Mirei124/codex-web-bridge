@@ -58,13 +58,12 @@ describe("dashboard security and operations", () => {
   beforeEach(() => { WebSocketStub.instances = []; terminalInput = undefined; terminalWrites = []; vi.stubGlobal("WebSocket", WebSocketStub); });
   afterEach(() => { vi.useRealTimers(); cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-  it("blocks every plain HTTP origin, including localhost, without making a request", () => {
-    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+  it("supports the daemon's explicit direct HTTP startup mode", async () => {
+    const fetch = vi.fn().mockResolvedValue(response({ authenticated: false })); vi.stubGlobal("fetch", fetch);
     vi.stubGlobal("location", { protocol: "http:", hostname: "localhost", host: "localhost:5173" });
     render(<App />);
-    expect(screen.getByRole("heading", { name: "需要安全连接" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("密码")).not.toBeInTheDocument();
-    expect(fetch).not.toHaveBeenCalled();
+    expect(await screen.findByLabelText("密码")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith("/api/auth/session", expect.anything());
   });
 
   it("uses the login CSRF token on the first authenticated mutation", async () => {
@@ -91,6 +90,8 @@ describe("dashboard security and operations", () => {
     fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "/repo/new" } });
     fireEvent.click(within(screen.getByRole("heading", { name: "创建会话" }).parentElement!).getByRole("button", { name: "创建" }));
     expect(await screen.findByRole("heading", { name: "Created" })).toBeInTheDocument();
+    const create = fetch.mock.calls.find(call => call[0] === "/api/threads" && (call[1] as RequestInit | undefined)?.method === "POST")![1] as RequestInit;
+    expect(JSON.parse(String(create.body))).toEqual({ hostId: "a", cwd: "/repo/new" });
     fireEvent.click(screen.getByRole("button", { name: "恢复" }));
     fireEvent.change(screen.getByLabelText("Codex Thread ID"), { target: { value: "codex-123" } });
     fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "/repo/resumed" } });

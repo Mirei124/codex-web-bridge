@@ -2,6 +2,41 @@ import { describe, expect, it } from "vitest";
 import { parseBusinessCommand, UsageError } from "./cli-command.js";
 
 describe("LLM-oriented CLI command parsing", () => {
+  it("parses the primary SSH target form with optional in-memory password and host-key acceptance", () => {
+    expect(parseBusinessCommand([
+      "host", "add", "codex@machine-a.example:2222", "--id", "machine-a", "--name", "Machine A",
+      "--password-stdin", "--accept-host-key",
+    ])).toMatchObject({
+      method: "host.upsert",
+      params: {
+        id: "machine-a", name: "Machine A", hostname: "machine-a.example", port: 2222,
+        username: "codex", passwordStdin: true, acceptHostKey: true,
+      },
+    });
+  });
+
+  it("parses bracketed IPv6 SSH targets", () => {
+    expect(parseBusinessCommand(["host", "add", "u@[2001:db8::1]:2200", "--id", "v6", "--name", "IPv6"]))
+      .toMatchObject({ params: { username: "u", hostname: "2001:db8::1", port: 2200 } });
+  });
+
+  it("derives a stable ID and name when only USER@HOST is supplied", () => {
+    expect(parseBusinessCommand(["host", "add", "codex@Machine-A.Example"]))
+      .toMatchObject({ params: { id: "codex-machine-a-example-22", name: "Machine-A.Example", username: "codex", port: 22 } });
+  });
+
+  it("derives different IDs for different SSH users and ports", () => {
+    expect(parseBusinessCommand(["host", "add", "root@machine-a:2222"]).params.id).toBe("root-machine-a-2222");
+    expect(parseBusinessCommand(["host", "add", "codex@machine-a:22"]).params.id).toBe("codex-machine-a-22");
+  });
+
+  it("supports explicit password clearing and rejects conflicting password input", () => {
+    expect(parseBusinessCommand(["host", "add", "codex@machine-a", "--clear-password"]))
+      .toMatchObject({ params: { clearPassword: true } });
+    expect(() => parseBusinessCommand(["host", "add", "codex@machine-a", "--clear-password", "--password-stdin"]))
+      .toThrow(/cannot be combined/);
+  });
+
   it.each([
     [["host", "list"], "host.list", {}],
     [["host", "get", "machine-a"], "host.get", { hostId: "machine-a" }],
@@ -17,7 +52,7 @@ describe("LLM-oriented CLI command parsing", () => {
     [["terminal", "takeover", "thread-1"], "terminal.takeover", { threadId: "thread-1" }],
     [["terminal", "release", "thread-1"], "terminal.release", { threadId: "thread-1" }],
   ])("maps %j to %s", (argv, method, params) => {
-    expect(parseBusinessCommand(argv)).toMatchObject({ method, params, stream: false, human: false });
+    expect(parseBusinessCommand(argv)).toMatchObject({ method, params, stream: false, json: false });
   });
 
   it("maps host upsert flags and applies only the documented port default", () => {
@@ -48,8 +83,8 @@ describe("LLM-oriented CLI command parsing", () => {
   });
 
   it.each([
-    [["thread", "create", "--host", "machine-a", "--cwd", "/work", "--title", "Build"], "thread.create", {
-      hostId: "machine-a", cwd: "/work", title: "Build",
+    [["thread", "create", "--host", "machine-a", "--cwd", "/work"], "thread.create", {
+      hostId: "machine-a", cwd: "/work",
     }],
     [["thread", "resume", "--host", "machine-a", "--codex-thread", "codex-1", "--cwd", "/work"], "thread.resume", {
       hostId: "machine-a", codexThreadId: "codex-1", cwd: "/work",
@@ -87,9 +122,9 @@ describe("LLM-oriented CLI command parsing", () => {
     });
   });
 
-  it("accepts --human in any argument position without changing the method mapping", () => {
-    expect(parseBusinessCommand(["--human", "thread", "list"])).toMatchObject({
-      method: "thread.list", human: true,
+  it("accepts --json in any argument position without changing the method mapping", () => {
+    expect(parseBusinessCommand(["--json", "thread", "list"])).toMatchObject({
+      method: "thread.list", json: true,
     });
   });
 
@@ -97,6 +132,7 @@ describe("LLM-oriented CLI command parsing", () => {
     [["host", "list", "--unknown", "x"], /unknown option/],
     [["host", "get"], /exactly one host ID/],
     [["thread", "create", "--host", "a"], /missing required option --cwd/],
+    [["thread", "create", "--host", "a", "--cwd", "/work", "--title", "custom"], /unknown option/],
     [["thread", "send", "t"], /exactly one of --text or --text-file/],
     [["thread", "send", "t", "--text", "x", "--text-file", "x.txt"], /exactly one of --text or --text-file/],
     [["host", "upsert", "--input-json", "{}", "--input-file", "host.json"], /mutually exclusive/],

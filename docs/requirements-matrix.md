@@ -9,12 +9,12 @@
 | CLI-03 | 重复 start/stop 幂等且不会误杀其他进程 | PID marker、`/proc` 身份校验及 CLI 集成测试 | 通过 |
 | CLI-04 | Web 支持的主机、线程、消息、请求和终端操作均可由 CLI 完成 | `cli-command.test.ts` 命令矩阵、`control.test.ts` 业务映射 | 通过 |
 | CLI-05 | 面向 LLM 提供稳定 JSON/JSONL、stderr 错误和退出码 | CLI parser/client 单测及构建后集成测试 | 通过 |
-| CLI-06 | CLI 使用私有本机控制通道，不需要 Web 密码且不削弱 HTTPS 门禁 | Unix Socket `0600`、目录 `0700`、HTTP 黑屏和活 socket 保护测试 | 通过 |
+| CLI-06 | CLI 使用私有本机控制通道，不需要 Web 密码且不削弱 Web 认证与传输边界 | Unix Socket `0600`、目录 `0700`、origin/代理边界和活 socket 保护测试 | 通过 |
 | CLI-07 | wait/watch 不丢失初始化窗口事件，Plan 问题和审批可结构化解决 | 订阅竞态、多问题 answers 和 approval 控制通道测试 | 通过 |
-| SEC-01 | daemon 仅监听回环地址 | 配置强制 `127.0.0.1`；CLI 套接字集成测试通过 | 通过 |
-| SEC-02 | 非可信代理或非 HTTPS 请求在认证前被拒绝且无敏感响应 | `server.test.ts` HTTPS 门禁测试 | 通过 |
+| SEC-01 | daemon 默认仅监听回环地址，公网 HTTP 绑定必须显式接受风险 | 默认 `127.0.0.1`；`--accept-risk` 才配置 `0.0.0.0` | 通过 |
+| SEC-02 | 直连请求服从配置 origin，伪造或不可信代理元数据在认证前被拒绝 | `server.test.ts` HTTP/HTTPS 边界测试 | 通过 |
 | SEC-03 | 密码使用 Argon2id 哈希，Cookie 为 Secure、HttpOnly、SameSite=Strict | `auth.test.ts`、`server.test.ts` | 通过 |
-| SEC-04 | WebSocket 校验 HTTPS、登录会话、Origin 与 CSRF/操作令牌 | 服务端握手实现；Dashboard CSRF URL/重连测试 | 通过（真实 Caddy E2E 待部署） |
+| SEC-04 | WebSocket 校验传输模式、登录会话、Origin 与 CSRF/操作令牌 | 服务端握手实现；Dashboard CSRF URL/重连测试 | 通过（真实 Caddy E2E 待部署） |
 | SEC-05 | SSH 固定主机指纹，不自动信任未知主机 | `runtime-manager.test.ts` OpenSSH SHA-256 指纹测试 | 通过 |
 | HOST-01 | 支持配置和展示多台 A 主机 | Server API/SQLite 测试、`HostManager.test.tsx` | 通过 |
 | HOST-02 | SSH 断线可重连，且不会终止远端 tmux | Runtime 退避重连测试；真实 SSH/tmux 基础链路冒烟 | 代码通过，网络断线待真实 A |

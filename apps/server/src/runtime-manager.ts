@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { EventEmitter } from "node:events";
 import { randomInt, randomUUID } from "node:crypto";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { HostRecord, ThreadRecord } from "@cwb/storage";
 import { SshConnection, TmuxCodexRuntime, TerminalSnapshotRenderer, type RemoteSession, type CommandStream } from "@cwb/remote-runtime";
 import { CodexClient } from "@cwb/codex-client";
@@ -21,6 +23,7 @@ export interface RuntimeManager {
   hostStatus?(hostId:string): "online"|"connecting"|"offline";
   listHistorical?(host:HostRecord):Promise<Array<{id:string;title?:string;cwd?:string;updatedAt?:string}>>;
   close(): Promise<void>;
+  setHostPassword?(hostId: string, password?: string): void;
 }
 
 interface Active { hostId:string;ssh: SshConnection; runtime: TmuxCodexRuntime; session: RemoteSession; client: CodexClient; forward: {port:number;close():Promise<void>}; stream?: CommandStream; turnId?: string; tmuxCreated:boolean }
@@ -40,7 +43,9 @@ export class HostRuntimeManager implements RuntimeManager {
   private readonly connecting=new Set<string>();
   private readonly retries=new Map<string,RetryState>();
   private closing=false;
+  private readonly hostPasswords = new Map<string, string>();
   constructor(private readonly options:HostRuntimeManagerOptions={}){}
+  setHostPassword(hostId:string,password?:string):void{if(password)this.hostPasswords.set(hostId,password);else this.hostPasswords.delete(hostId);}
   hostStatus(hostId:string):"online"|"connecting"|"offline"{if([...this.active.values()].some(active=>active.hostId===hostId))return "online";return this.connecting.has(hostId)?"connecting":"offline";}
   async listHistorical(host:HostRecord){
     const active=[...this.active.values()].find(value=>value.hostId===host.id);
@@ -89,7 +94,21 @@ export class HostRuntimeManager implements RuntimeManager {
   private cancelRetry(threadId:string):void{const state=this.retries.get(threadId);if(!state)return;state.cancelled=true;if(state.timer)clearTimeout(state.timer);this.retries.delete(threadId);}
   private async dispose(active:Active,options:{stopTmux:boolean}):Promise<void>{active.stream?.removeAllListeners();active.stream?.close();active.client.removeAllListeners("transportError");active.client.removeAllListeners("transportClose");active.client.close();await active.forward.close().catch(()=>undefined);if(options.stopTmux)await active.runtime.stop(active.session.name).catch(()=>undefined);active.ssh.close();}
   private async historicalFrom(client:CodexClient):Promise<Array<{id:string;title?:string;cwd?:string;updatedAt?:string}>>{const result=await client.listThreads({limit:100});return result.data.map(thread=>({id:thread.id,title:typeof thread.name==="string"?thread.name:undefined,cwd:typeof thread.cwd==="string"?thread.cwd:undefined,updatedAt:typeof thread.updatedAt==="string"?thread.updatedAt:undefined}));}
-  private async createSsh(host:HostRecord):Promise<SshConnection>{const expected=opensshSha256ToHex(host.hostKeySha256),config={host:host.hostname,port:host.port,username:host.username,privateKey:await readFile(host.identityFile),hostHash:"sha256" as const,hostVerifier:(key:string)=>key.toLowerCase()===expected};return this.options.sshFactory?.(config)??new SshConnection(config);}
+  private async createSsh(host:HostRecord):Promise<SshConnection>{
+    const expected=opensshSha256ToHex(host.hostKeySha256);
+    const config:ConstructorParameters<typeof SshConnection>[0]={host:host.hostname,port:host.port,username:host.username,hostHash:"sha256",hostVerifier:(key:string)=>key.toLowerCase()===expected};
+    const password=this.hostPasswords.get(host.id);
+    if(password)config.password=password;
+    else if(host.identityFile)config.privateKey=await readFile(host.identityFile);
+    else if(process.env.SSH_AUTH_SOCK)config.agent=process.env.SSH_AUTH_SOCK;
+    else {
+      for(const name of ["id_ed25519","id_ecdsa","id_rsa"]){
+        try{config.privateKey=await readFile(join(homedir(),".ssh",name));break;}
+        catch(error){if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error;}
+      }
+    }
+    return this.options.sshFactory?.(config)??new SshConnection(config);
+  }
   private must(threadId: string): Active { const value = this.active.get(threadId); if (!value) throw new Error("thread runtime is not connected"); return value; }
 }
 

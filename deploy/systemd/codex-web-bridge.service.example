@@ -5,6 +5,8 @@ After=network-online.target
 [Service]
 Type=simple
 User=codex-web-bridge
+# Initialize this state directory once with the intended password and public
+# HTTP/HTTPS origin before enabling the unit; subsequent starts reuse config.json.
 Environment=CWB_DATA_DIR=/var/lib/codex-web-bridge
 ExecStart=/usr/local/bin/codex-web-bridge start --foreground
 Restart=on-failure

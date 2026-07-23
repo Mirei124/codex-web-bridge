@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -9,7 +9,7 @@ const cli = resolve(import.meta.dirname, "../dist/cli.js");
 let dataDir: string | undefined;
 
 function run(args: string[], env: NodeJS.ProcessEnv) {
-  return spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8", timeout: 10_000 });
+  return spawnSync(process.execPath, [cli, ...args, "--json"], { env, encoding: "utf8", timeout: 10_000 });
 }
 
 function output(result: ReturnType<typeof run>) {
@@ -37,14 +37,26 @@ afterEach(async () => {
 });
 
 describe("built CLI and daemon", () => {
+  it("uses human-readable output by default and structured output only with --json", () => {
+    const human = spawnSync(process.execPath, [cli, "help"], { env: process.env, encoding: "utf8" });
+    expect(human.status).toBe(0);
+    expect(human.stdout).toMatch(/^Usage:/);
+    expect(human.stdout).not.toContain('"schemaVersion":1');
+
+    const json = spawnSync(process.execPath, [cli, "help", "--json"], { env: process.env, encoding: "utf8" });
+    expect(output(json)).toMatchObject({ schemaVersion: 1, ok: true, kind: "result" });
+  });
+
   it("starts, reports status, serves dashboard/API, prints the URL, and stops safely", async () => {
     dataDir = await mkdtemp(join(tmpdir(), "cwb-cli-test-"));
     const port = await freePort();
-    const origin = "https://bridge.test";
+    const origin = `http://127.0.0.1:${port}`;
     const env = { ...process.env, CWB_DATA_DIR: dataDir };
 
-    const started = run(["start", "--password", "test-password", "--origin", origin, "--port", String(port)], env);
-    expect(output(started)).toMatchObject({ schemaVersion: 1, ok: true, kind: "result", data: { state: "running" } });
+    const started = run(["start", "--port", String(port)], env);
+    const startedOutput = output(started);
+    expect(startedOutput).toMatchObject({ schemaVersion: 1, ok: true, kind: "result", data: { state: "running" } });
+    expect(startedOutput.data.generatedPassword).toMatch(/^[A-Za-z0-9_-]{32}$/);
 
     const pidFile = JSON.parse(await readFile(join(dataDir, "daemon.pid"), "utf8")) as { pid: number; marker: string };
     expect(pidFile.marker).toBe("codex-web-bridge-daemon");
@@ -54,7 +66,7 @@ describe("built CLI and daemon", () => {
     expect(output(run(["dashboard"], env))).toMatchObject({ data: { url: origin } });
     expect(output(run(["host", "list"], env))).toMatchObject({ data: [] });
 
-    const headers = { "x-forwarded-proto": "https", origin };
+    const headers = { origin };
     const dashboard = await fetch(`http://127.0.0.1:${port}/`, { headers });
     expect(dashboard.status).toBe(200);
     expect(await dashboard.text()).toContain('<div id="root"></div>');
@@ -62,16 +74,34 @@ describe("built CLI and daemon", () => {
     const anonymous = await fetch(`http://127.0.0.1:${port}/api/auth/session`, { headers });
     expect(anonymous.status).toBe(401);
     const login = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
-      method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ password: "test-password" }),
+      method: "POST", headers: { ...headers, connection: "close", "content-type": "application/json" }, body: JSON.stringify({ password: startedOutput.data.generatedPassword }),
     });
     expect(login.status).toBe(200);
-    expect(login.headers.get("set-cookie")).toContain("Secure");
+    expect(login.headers.get("set-cookie")).not.toContain("Secure");
+
+    const resetOutput = output(run(["password", "reset"], env));
+    expect(resetOutput.data.generatedPassword).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(resetOutput.data.daemonRestarted).toBe(true);
+    const resetLogin = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+      method: "POST",
+      headers: { ...headers, connection: "close", "content-type": "application/json" },
+      body: JSON.stringify({ password: resetOutput.data.generatedPassword }),
+    });
+    expect(resetLogin.status).toBe(200);
+
+    const restarted = run(["restart"], env);
+    expect(output(restarted).data).not.toHaveProperty("generatedPassword");
+    const restartedPid = (JSON.parse(await readFile(join(dataDir, "daemon.pid"), "utf8")) as { pid: number }).pid;
 
     const stopped = run(["stop"], env);
-    expect(output(stopped)).toMatchObject({ data: { state: "stopped", pid: pidFile.pid } });
+    expect(output(stopped)).toMatchObject({ data: { state: "stopped", pid: restartedPid } });
     const status = run(["status"], env);
     expect(status.status).toBe(3);
     expect(JSON.parse(status.stdout)).toMatchObject({ schemaVersion: 1, ok: true, kind: "result", data: { state: "not_running" } });
+
+    const startedWithNewPassword = output(run(["start", "--reset-password"], env));
+    expect(startedWithNewPassword.data.generatedPassword).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(output(run(["stop"], env))).toMatchObject({ data: { state: "stopped" } });
   }, 20_000);
 
   it("reports an unavailable daemon as structured JSON", async () => {
@@ -83,5 +113,36 @@ describe("built CLI and daemon", () => {
       ok: false,
       error: { code: "daemon_unavailable", retryable: true },
     });
+  });
+
+  it("rolls back a newly generated password config when daemon startup fails", async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "cwb-cli-test-"));
+    const port = await freePort();
+    const blocker = createServer();
+    await new Promise<void>((resolveListen, reject) => {
+      blocker.once("error", reject);
+      blocker.listen(port, "127.0.0.1", resolveListen);
+    });
+    const env = { ...process.env, CWB_DATA_DIR: dataDir };
+    try {
+      const failed = run(["start", "--port", String(port)], env);
+      expect(failed.status).toBe(3);
+      expect(JSON.parse(failed.stderr)).toMatchObject({ ok: false, error: { code: "daemon_unavailable" } });
+      await expect(readFile(join(dataDir, "config.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await new Promise<void>((resolveClose, reject) => blocker.close(error => error ? reject(error) : resolveClose()));
+    }
+  }, 15_000);
+
+  it("rolls back a new config when opening the daemon log fails before spawn", async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "cwb-cli-test-"));
+    await mkdir(join(dataDir, "daemon.log"));
+    const env = { ...process.env, CWB_DATA_DIR: dataDir };
+
+    const failed = run(["start"], env);
+
+    expect(failed.status).toBe(10);
+    expect(JSON.parse(failed.stderr)).toMatchObject({ ok: false, error: { code: "internal_error" } });
+    await expect(readFile(join(dataDir, "config.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

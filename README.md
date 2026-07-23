@@ -2,11 +2,11 @@
 
 Codex Web Bridge runs a single-user daemon and dashboard on public machine B. It connects to machine A over SSH, keeps each Codex session alive in tmux, uses Codex app-server for structured interaction, and exposes a read-only terminal with an explicit takeover lease.
 
-The application deliberately returns no information over plain HTTP. Put Caddy in front of the daemon and access it only through the configured HTTPS origin.
+By default the daemon listens only on `127.0.0.1` and provides a direct HTTP dashboard for local use. Public deployments should put Caddy in front of that loopback listener and use an HTTPS origin. Binding plain HTTP to all interfaces requires the explicit `--accept-risk` flag and can expose the dashboard password and conversation data.
 
 ## Requirements
 
-- Machine B: Linux, Node.js 22+, pnpm 11, Caddy, curl and jq, and network access to A over SSH.
+- Machine B: Linux, Node.js 22+, pnpm 11, and network access to A over SSH. Caddy is required only for the recommended public HTTPS deployment.
 - Machine A: SSH server, tmux, and the pinned compatible Codex CLI available to the configured SSH user.
 - A dedicated SSH key on B and a verified SHA-256 host-key fingerprint for A.
 
@@ -17,9 +17,10 @@ git clone <repository-url> codex-web-bridge
 cd codex-web-bridge
 pnpm install
 pnpm build
+pnpm cwb help
 ```
 
-The built CLI is `apps/server/dist/cli.js`. The following examples use a convenience shell variable:
+After building, `pnpm cwb <command>` runs the compiled CLI. The built entry point is also available directly at `apps/server/dist/cli.js`. The following examples use a convenience shell variable:
 
 ```bash
 CWB_CLI="$PWD/apps/server/dist/cli.js"
@@ -28,7 +29,32 @@ node "$CWB_CLI" help
 
 Do not set `CWB_DATA_DIR` to a shared or web-served directory. By default state is stored at `~/.local/state/codex-web-bridge` with restricted permissions. It contains the password hash, session secret, SQLite database, PID, readiness marker, and daemon log.
 
-## Configure Caddy and start
+## Start locally
+
+The first start defaults to `http://127.0.0.1:3210` and generates a dashboard password. Save the `generatedPassword` from the JSON result; only its hash is persisted.
+
+```bash
+node "$CWB_CLI" start
+node "$CWB_CLI" dashboard
+```
+
+Later starts reuse the protected configuration. Supply `--password`, `--origin`, and `--port` on the first start when you need fixed values. To expose plain HTTP on all interfaces, you must also pass `--accept-risk`; the CLI prints a warning because passwords and conversations can then cross the network without transport encryption.
+
+The original generated password cannot be recovered because only its hash is stored. Generate a replacement and restart the daemon automatically with:
+
+```bash
+pnpm cwb password reset
+```
+
+If the daemon is stopped and you want the new password returned as part of the normal start result, use:
+
+```bash
+pnpm cwb start --reset-password
+```
+
+A plain `start` keeps the existing password stable. On a genuinely new configuration, plain `start` still generates and prints the initial password automatically.
+
+## Configure public HTTPS with Caddy
 
 Copy [deploy/Caddyfile.example](deploy/Caddyfile.example), replace `bridge.example.com`, and ensure Caddy is the only process allowed to reach `127.0.0.1:3210`. The proxy must preserve the client `Origin` and set `X-Forwarded-Proto: https`.
 
@@ -47,16 +73,22 @@ The password and origin are accepted only on the first start. Later starts read 
 
 ```bash
 node "$CWB_CLI" status
-node "$CWB_CLI" dashboard  # prints the configured HTTPS URL
+node "$CWB_CLI" dashboard  # prints the configured HTTP or HTTPS URL
 node "$CWB_CLI" stop
 node "$CWB_CLI" restart
 ```
 
 For diagnosis, inspect `~/.local/state/codex-web-bridge/daemon.log`. `start --foreground` is intended for a supervisor or local diagnosis and does not detach.
 
-For a supervised deployment, copy [deploy/systemd/codex-web-bridge.service.example](deploy/systemd/codex-web-bridge.service.example), adjust its user, binary and state-directory paths, then enable it:
+For a supervised deployment, perform the first start with the desired password and public origin, stop the detached daemon, then copy [deploy/systemd/codex-web-bridge.service.example](deploy/systemd/codex-web-bridge.service.example), adjust its user, binary and state-directory paths, and enable it:
 
 ```bash
+CWB_DATA_DIR=/var/lib/codex-web-bridge \
+CWB_PASSWORD='replace-with-a-long-password' \
+CWB_PUBLIC_ORIGIN='https://bridge.example.com' \
+  /usr/local/bin/codex-web-bridge start
+CWB_DATA_DIR=/var/lib/codex-web-bridge /usr/local/bin/codex-web-bridge stop
+
 sudo cp deploy/systemd/codex-web-bridge.service.example /etc/systemd/system/codex-web-bridge.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now codex-web-bridge
@@ -65,15 +97,20 @@ sudo systemctl status codex-web-bridge
 
 ## Add machine A
 
-First verify A's host key through a trusted channel. The value stored by the bridge is the OpenSSH SHA-256 fingerprint, without making a trust-on-first-use decision:
+The primary setup flow is the CLI. With no authentication option it uses `SSH_AUTH_SOCK`, then the standard private-key files under `~/.ssh`. Use `--identity-file` for an explicit key, `--password` for a hidden interactive prompt, or `--password-stdin` for automation:
 
 ```bash
-ssh-keyscan -p 22 machine-a.example > /tmp/machine-a.hostkey
-ssh-keygen -lf /tmp/machine-a.hostkey -E sha256
-ssh -i ~/.ssh/codex_bridge user@machine-a.example 'tmux -V && codex --version'
+node "$CWB_CLI" host add user@machine-a.example --password
+# or:
+printf '%s\n' "$SSH_PASSWORD" | \
+  node "$CWB_CLI" host add user@machine-a.example --password-stdin
 ```
 
-After login, choose **主机配置**, then **新增主机**. Enter the verified fingerprint and the absolute private-key path on B. The dashboard never uploads or reads private-key contents in the browser. Existing hosts can be selected from the same panel and saved again under their stable ID. The status indicator shows `online`, `connecting`, or `offline` as reported by the daemon.
+On first contact, an interactive terminal displays the scanned host-key fingerprint and asks whether to trust it. Verify that fingerprint through a trusted channel before answering yes. Non-interactive use must pass `--accept-host-key`. A changed stored key is always rejected. The optional `--id` and `--name` flags override values derived from the hostname.
+
+SSH passwords live only in daemon memory and must be supplied again after a daemon restart. They are not written to SQLite or the configuration file. The project does not generate keys or configure passwordless SSH.
+
+The Dashboard's host editor remains available for deployments that already know the verified fingerprint and private-key path. The CLI is required for password authentication and the managed host-key confirmation flow.
 
 For automated provisioning, the equivalent authenticated API flow is:
 
@@ -114,12 +151,15 @@ The CLI exposes the dashboard operations through the daemon's private Unix socke
 host list
 host get HOST_ID
 host codex-threads HOST_ID
+host add USER@HOST[:PORT] [--id ID] [--name NAME] \
+  [--identity-file ABSOLUTE_PATH | --password | --password-stdin | --clear-password] \
+  [--accept-host-key]
 host upsert --id ID --name NAME --hostname HOST --username USER \
-  --host-key SHA256:FINGERPRINT --identity-file ABSOLUTE_PATH [--port PORT]
+  [--identity-file ABSOLUTE_PATH] [--port PORT] [--accept-host-key]
 
 thread list
 thread get THREAD_ID
-thread create --host HOST_ID --cwd ABSOLUTE_PATH [--title TITLE]
+thread create --host HOST_ID --cwd ABSOLUTE_PATH
 thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH
 thread send THREAD_ID (--text TEXT | --text-file PATH)
 thread wait THREAD_ID [--timeout MILLISECONDS]
@@ -138,6 +178,10 @@ terminal takeover|release THREAD_ID
 terminal input THREAD_ID (--data TEXT | --data-file PATH)
 ```
 
+`host add` verifies the SSH host key before saving. In a TTY it displays an unknown fingerprint for confirmation; automation must pass `--accept-host-key` explicitly. `--password` prompts without echo and `--password-stdin` reads a password from stdin. Passwords stay only in daemon memory and must be supplied again after a daemon restart.
+
+Use `--clear-password` to switch an existing host back to key or agent authentication. Updating its hostname, SSH user, port, or identity-file setting also clears the old in-memory password; changing display metadata does not.
+
 `host upsert` also accepts a complete host object through `--input-json` or `--input-file`. Use `-` as an input, text, or data filename to read stdin. This avoids shell quoting and command-line length problems:
 
 ```bash
@@ -150,9 +194,9 @@ node "$CWB_CLI" host upsert --input-file - <<'JSON'
 JSON
 ```
 
-### JSON and streaming output
+### Human and JSON output
 
-JSON is the default so another program or LLM can consume every invocation without scraping prose. A successful non-streaming command writes exactly one line:
+Human-readable output is the default. List commands use aligned tables, detail commands use labeled fields, and mutations print short status messages. Pass `--json` when another program or LLM needs a stable structured result. A successful non-streaming JSON command writes exactly one line:
 
 ```json
 {"schemaVersion":1,"ok":true,"kind":"result","data":{"state":"running","pid":1234}}
@@ -165,7 +209,7 @@ JSON is the default so another program or LLM can consume every invocation witho
 {"schemaVersion":1,"ok":true,"kind":"result","data":{"id":"...","status":"exited","messages":[],"pendingRequests":[]}}
 ```
 
-Errors are one JSON line on stderr. `--human` opts into formatted human-readable output.
+Output is human-readable by default. Pass `--json` for one structured JSON value per line on stdout and structured errors on stderr; this is the recommended mode for scripts and LLM tool integrations.
 
 ### Waiting, Plan questions, and approvals
 

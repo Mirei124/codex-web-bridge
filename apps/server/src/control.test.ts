@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +16,8 @@ class FakeRuntime implements RuntimeManager {
   readonly events = new EventEmitter();
   readonly terminalInputs: string[] = [];
   readonly resolutions: Array<{ requestId: string | number; value: unknown }> = [];
+  readonly passwords = new Map<string, string>();
+  setHostPassword(hostId: string, password?: string) { if (password) this.passwords.set(hostId, password); else this.passwords.delete(hostId); }
   async create() { return "codex-thread"; }
   async resume() {}
   async reconnect() {}
@@ -85,21 +87,90 @@ function request(socketPath: string, method: string, params: Record<string, unkn
 }
 
 describe("local control server", () => {
-  it("creates a private socket and maps host/thread operations through the existing HTTPS-gated routes", async () => {
-    const { socketPath } = await setup();
+  it("creates a private socket and maps host/thread operations through the authenticated routes", async () => {
+    const { socketPath, runtime } = await setup();
     expect((await stat(socketPath)).mode & 0o777).toBe(0o600);
     expect((await stat(directory!)).mode & 0o777).toBe(0o700);
 
-    const host = { id: "host", name: "A", hostname: "a", port: 22, username: "codex", hostKeySha256: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", identityFile: "/key" };
+    const host = { id: "host", name: "A", hostname: "a", port: 22, username: "codex", hostKeySha256: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", identityFile: "/key", password: "memory-only" };
     expect(await request(socketPath, "host.upsert", host)).toMatchObject({ ok: true, result: { id: "host" } });
+    expect(runtime.passwords.get("host")).toBe("memory-only");
+    expect(storage!.db.prepare("SELECT * FROM hosts WHERE id=?").get("host")).not.toHaveProperty("password");
+    const { password: _password, ...keyOnlyHost } = host;
+    expect(await request(socketPath, "host.upsert", keyOnlyHost)).toMatchObject({ ok: true, result: { id: "host" } });
+    expect(runtime.passwords.get("host")).toBe("memory-only");
     expect(await request(socketPath, "host.get", { hostId: "host" })).toMatchObject({ ok: true, result: { id: "host", hostname: "a" } });
     const created = await request(socketPath, "thread.create", { hostId: "host", cwd: "/work" });
     expect(created).toMatchObject({ ok: true, result: { codexThreadId: "codex-thread" } });
     expect(await request(socketPath, "thread.send", { threadId: created.result.id, text: "hello" })).toMatchObject({ ok: true, result: { turnId: "turn-1" } });
 
     const plainHttp = await app!.inject({ method: "GET", url: "/api/hosts" });
-    expect(plainHttp.statusCode).toBe(404);
-    expect(plainHttp.body).toBe("");
+    expect(plainHttp.statusCode).toBe(401);
+  });
+
+  it("requires explicit acceptance for an unknown host key, persists it, and rejects a change", async () => {
+    const { socketPath } = await setup();
+    const originalPath = process.env.PATH;
+    const originalDataDir = process.env.CWB_DATA_DIR;
+    process.env.CWB_DATA_DIR = directory;
+    const bin = join(directory!, "bin");
+    await import("node:fs/promises").then(fs => fs.mkdir(bin));
+    const scanner = join(bin, "ssh-keyscan");
+    const first = Buffer.from("first-host-key").toString("base64");
+    await writeFile(scanner, `#!/bin/sh\nprintf 'machine-a ssh-ed25519 ${first}\\n'\n`);
+    await chmod(scanner, 0o700);
+    process.env.PATH = `${bin}:${originalPath}`;
+    const host = { id: "machine-a", name: "A", hostname: "machine-a", port: 22, username: "codex" };
+    try {
+      await expect(controlRequest(socketPath, "host.upsert", host)).rejects.toMatchObject({
+        controlError: { code: "HOST_KEY_UNKNOWN", details: { fingerprint: expect.stringMatching(/^SHA256:/) } },
+      });
+      await expect(controlRequest(socketPath, "host.upsert", { ...host, acceptHostKey: true })).resolves.toEqual({ id: "machine-a" });
+      expect(await readFile(join(directory!, "known_hosts"), "utf8")).toContain(`machine-a ssh-ed25519 ${first}`);
+      const changed = Buffer.from("changed-host-key").toString("base64");
+      await writeFile(scanner, `#!/bin/sh\nprintf 'machine-a ssh-ed25519 ${changed}\\n'\n`);
+      await expect(controlRequest(socketPath, "host.upsert", host)).rejects.toMatchObject({
+        controlError: { code: "HOST_KEY_CHANGED" },
+      });
+    } finally {
+      process.env.PATH = originalPath;
+      if (originalDataDir === undefined) delete process.env.CWB_DATA_DIR;
+      else process.env.CWB_DATA_DIR = originalDataDir;
+    }
+  });
+
+  it("clears an in-memory password when a later upsert omits it", async () => {
+    const { socketPath, runtime } = await setup();
+    const host = {
+      id: "host", name: "A", hostname: "old.example", port: 22, username: "codex",
+      hostKeySha256: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", identityFile: "",
+    };
+    await expect(controlRequest(socketPath, "host.upsert", { ...host, password: "old-secret" })).resolves.toEqual({ id: "host" });
+    expect(runtime.passwords.get("host")).toBe("old-secret");
+    await expect(controlRequest(socketPath, "host.upsert", { ...host, hostname: "new.example", identityFile: "/keys/new" })).resolves.toEqual({ id: "host" });
+    expect(runtime.passwords.has("host")).toBe(false);
+  });
+
+  it("preserves an in-memory password across metadata-only host edits", async () => {
+    const { socketPath, runtime } = await setup();
+    const host = {
+      id: "host", name: "Old name", hostname: "same.example", port: 22, username: "codex",
+      hostKeySha256: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", identityFile: "",
+    };
+    await controlRequest(socketPath, "host.upsert", { ...host, password: "keep-secret" });
+    await controlRequest(socketPath, "host.upsert", { ...host, name: "New name", hostKeySha256: "SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=" });
+    expect(runtime.passwords.get("host")).toBe("keep-secret");
+  });
+
+  it("clears an in-memory password only when explicitly requested without connection changes", async () => {
+    const { socketPath, runtime } = await setup();
+    const host = {
+      id: "host", name: "A", hostname: "same.example", port: 22, username: "codex",
+      hostKeySha256: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", identityFile: "",
+    };
+    await controlRequest(socketPath, "host.upsert", { ...host, password: "clear-secret" });
+    await controlRequest(socketPath, "host.upsert", { ...host, clearPassword: true });
+    expect(runtime.passwords.has("host")).toBe(false);
   });
 
   it("frames watched events with the request id and sends a terminal done frame", async () => {

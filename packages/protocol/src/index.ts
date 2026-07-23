@@ -19,8 +19,10 @@ export interface HostConfig {
   hostname: string;
   port: number;
   username: string;
-  hostKeySha256: string;
-  identityFile: string;
+  hostKeySha256?: string;
+  identityFile?: string;
+  password?: string;
+  clearPassword?: boolean;
 }
 
 export interface CodexThreadSummary {
@@ -103,7 +105,7 @@ export interface ThreadDetail extends ThreadSummary {
 
 export interface LoginRequest { password: string }
 export interface SessionResponse { authenticated: boolean; csrfToken?: string }
-export interface CreateThreadRequest { hostId: string; cwd: string; title?: string }
+export interface CreateThreadRequest { hostId: string; cwd: string }
 export interface ResumeThreadRequest { hostId: string; codexThreadId: string; cwd: string }
 export interface SendMessageRequest { text: string }
 export interface ResolveRequest {

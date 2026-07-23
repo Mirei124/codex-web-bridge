@@ -14,7 +14,7 @@
 | 本地状态 | SQLite + Drizzle ORM | 保存主机配置、线程映射、事件游标和登录会话 |
 | SSH | ssh2 | 从 B 执行 A 上的 tmux 管理命令，并建立 TCP 转发 |
 | 密码 | Argon2id | 保存单用户密码哈希 |
-| 入口代理 | Caddy | 终止 TLS，并将 HTTPS/WSS 代理到回环监听的应用 |
+| 入口代理 | Caddy（公网部署） | 终止 TLS，并将 HTTPS/WSS 代理到回环监听的应用；本机可直接使用 HTTP |
 | 测试 | Vitest + Playwright | 协议单测、SSH/tmux 集成测试和浏览器端到端测试 |
 
 ## 与 botmux 的关系
@@ -66,7 +66,7 @@ B 通过 SSH 完成两类操作：
 ## 后端模块边界
 
 ```text
-认证与 HTTPS 门禁
+认证与传输边界
         │
 HTTP / WebSocket API
         │
@@ -101,8 +101,8 @@ codex-web-bridge/
 
 ## 关键安全实现
 
-1. 服务端监听 `127.0.0.1`，不监听公网网卡。
-2. 在路由、静态资源和登录处理之前执行 HTTPS 门禁；仅接受来自已配置回环代理且 `X-Forwarded-Proto=https` 的请求。
+1. 服务端默认监听 `127.0.0.1`；只有 CLI 显式接受风险时才监听公网网卡。
+2. 在路由、静态资源和登录处理之前校验配置 origin 与代理元数据；本机可直连 HTTP，代理请求只信任已配置回环代理及其 HTTPS 标记。
 3. 使用服务端登录会话、`HttpOnly`、`Secure`、`SameSite=Strict` Cookie；登录和敏感操作执行跨站请求伪造防护。
 4. WebSocket 握手同时校验安全协议、登录会话和 `Origin`。
 5. 登录失败统一响应并限速，不泄漏密码是否正确或系统是否已配置。
@@ -123,6 +123,6 @@ codex-web-bridge/
 1. 固化 Codex 协议契约与本项目事件模型。
 2. 定义 SQLite 表、REST API 和 WebSocket 消息。
 3. 实现 SSH/tmux/app-server 最小闭环。
-4. 实现密码认证与 HTTPS 门禁。
+4. 实现密码认证、origin 校验与直连/代理传输边界。
 5. 实现线程列表、对话流、计划选项和审批 WebUI。
 6. 增加断线恢复、安全与端到端测试。

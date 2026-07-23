@@ -5,9 +5,12 @@ import { z } from "zod";
 
 const schema = z.object({
   version: z.literal(1),
-  bindHost: z.literal("127.0.0.1").default("127.0.0.1"),
+  bindHost: z.enum(["127.0.0.1", "0.0.0.0"]).default("127.0.0.1"),
   port: z.number().int().min(1).max(65535).default(3210),
-  publicOrigin: z.string().url().refine((value) => value.startsWith("https://"), "publicOrigin must use HTTPS"),
+  publicOrigin: z.string().url().refine(
+    (value) => value.startsWith("http://") || value.startsWith("https://"),
+    "publicOrigin must use HTTP or HTTPS",
+  ),
   passwordHash: z.string().min(1),
   sessionSecret: z.string().min(32),
   trustedProxy: z.literal("127.0.0.1").default("127.0.0.1"),
@@ -29,12 +32,13 @@ export function paths(env: NodeJS.ProcessEnv = process.env) {
     ready: join(root, "daemon.ready"),
     log: join(root, "daemon.log"),
     controlSocket: join(root, "control.sock"),
+    knownHosts: join(root, "known_hosts"),
   };
 }
 
 export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<AppConfig> {
   const raw = JSON.parse(await readFile(paths(env).config, "utf8"));
-  return schema.parse(raw);
+  return normalizeLegacyOrigin(schema.parse(raw));
 }
 
 export async function saveConfig(config: AppConfig, env: NodeJS.ProcessEnv = process.env): Promise<void> {
@@ -46,4 +50,9 @@ export async function saveConfig(config: AppConfig, env: NodeJS.ProcessEnv = pro
   await rename(temp, target);
 }
 
-export function parseConfig(value: unknown): AppConfig { return schema.parse(value); }
+export function parseConfig(value: unknown): AppConfig { return normalizeLegacyOrigin(schema.parse(value)); }
+
+function normalizeLegacyOrigin(config: AppConfig): AppConfig {
+  if (config.publicOrigin !== "https://localhost") return config;
+  return { ...config, publicOrigin: `http://localhost:${config.port}` };
+}

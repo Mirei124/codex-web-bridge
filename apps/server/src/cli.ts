@@ -3,25 +3,37 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { open, readFile, unlink, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { loadConfig, paths, saveConfig } from "@cwb/config";
+import { createInterface } from "node:readline/promises";
+import { loadConfig, paths, saveConfig, type AppConfig } from "@cwb/config";
 import { hashPassword } from "./auth.js";
 import { helpText, parseBusinessCommand, UsageError, type ParsedCommand } from "./cli-command.js";
 import { controlRequest, ControlRequestError, type ControlError } from "./control-client.js";
+import { humanEventMode, renderHuman, renderHumanError } from "./cli-renderer.js";
+import { rollbackCreatedConfig, terminateSpawnedDaemon } from "./startup-transaction.js";
 
 type DaemonCommand = "start" | "stop" | "restart" | "status" | "dashboard" | "help";
 const rawArgs = process.argv.slice(2);
 
-function success(data: unknown, human = false, kind: "event" | "result" = "result"): void {
-  if (human) {
-    console.log(typeof data === "string" ? data : JSON.stringify(data, null, 2));
-    return;
+function success(
+  data: unknown,
+  json = false,
+  kind: "event" | "result" = "result",
+  method?: string,
+  params?: Record<string, unknown>,
+): void {
+  if (json) console.log(JSON.stringify({ schemaVersion: 1, ok: true, kind, data }));
+  else {
+    const rendered = renderHuman(data, { kind, method, params });
+    const mode = kind === "event" ? humanEventMode(data, method) : "line";
+    if (mode === "raw") process.stdout.write(rendered);
+    else if (mode === "stderr") console.error(rendered);
+    else if (mode === "line") console.log(rendered);
   }
-  console.log(JSON.stringify({ schemaVersion: 1, ok: true, kind, data }));
 }
 
-function failure(error: ControlError, human = false): void {
-  if (human) console.error(error.message);
-  else console.error(JSON.stringify({ schemaVersion: 1, ok: false, error }));
+function failure(error: ControlError, json = false): void {
+  if (json) console.error(JSON.stringify({ schemaVersion: 1, ok: false, error }));
+  else console.error(renderHumanError(error));
 }
 
 function exitCode(code: string): number {
@@ -30,8 +42,8 @@ function exitCode(code: string): number {
   if (normalized === "daemon_unavailable" || normalized === "not_running") return 3;
   if (normalized === "not_found" || normalized.endsWith("_not_found")) return 4;
   if (normalized === "conflict" || normalized === "invalid_state" || normalized.endsWith("already_resolved")) return 5;
-  if (["forbidden", "unauthorized", "security_error"].includes(normalized)) return 6;
-  if (["remote_error", "ssh_error", "codex_error", "runtime_failure"].includes(normalized)) return 7;
+  if (["forbidden", "unauthorized", "security_error", "host_key_unknown", "host_key_changed", "host_key_rejected"].includes(normalized)) return 6;
+  if (["remote_error", "ssh_error", "codex_error", "runtime_failure", "ssh_host_key_scan_failed"].includes(normalized)) return 7;
   if (normalized === "timeout") return 8;
   if (normalized === "protocol_error" || normalized === "incompatible_version") return 9;
   return 10;
@@ -84,34 +96,48 @@ async function clearStaleControlLock(): Promise<void> {
   await unlink(lockPath);
 }
 
-async function configure(args: string[]): Promise<void> {
+async function configure(args: string[]): Promise<{
+  generatedPassword?: string;
+  createdConfig?: AppConfig;
+  replacedConfig?: { previous: AppConfig; current: AppConfig };
+}> {
   try {
-    await loadConfig();
-    return;
+    const config = await loadConfig();
+    if (!args.includes("--reset-password")) return {};
+    if (option(args, "--password") !== undefined) throw new UsageError("--password and --reset-password are mutually exclusive");
+    const generatedPassword = randomBytes(24).toString("base64url");
+    const current = { ...config, passwordHash: await hashPassword(generatedPassword) };
+    await saveConfig(current);
+    return { generatedPassword, replacedConfig: { previous: config, current } };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  const password = option(args, "--password") ?? process.env.CWB_PASSWORD;
-  const publicOrigin = option(args, "--origin") ?? process.env.CWB_PUBLIC_ORIGIN;
-  if (!password || !publicOrigin) throw new UsageError("first start requires --password and --origin (or CWB_PASSWORD and CWB_PUBLIC_ORIGIN)");
   const portText = option(args, "--port") ?? "3210";
   if (!/^\d+$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535) throw new UsageError("--port must be an integer from 1 to 65535");
-  await saveConfig({
+  const port = Number(portText);
+  const suppliedPassword = option(args, "--password") ?? process.env.CWB_PASSWORD;
+  const generatedPassword = suppliedPassword ? undefined : randomBytes(24).toString("base64url");
+  const password = suppliedPassword ?? generatedPassword!;
+  const publicOrigin = option(args, "--origin") ?? process.env.CWB_PUBLIC_ORIGIN ?? `http://127.0.0.1:${port}`;
+  const acceptRisk = args.includes("--accept-risk");
+  const createdConfig: AppConfig = {
     version: 1,
-    bindHost: "127.0.0.1",
-    port: Number(portText),
+    bindHost: acceptRisk ? "0.0.0.0" : "127.0.0.1",
+    port,
     publicOrigin,
     passwordHash: await hashPassword(password),
     sessionSecret: randomBytes(32).toString("base64url"),
     trustedProxy: "127.0.0.1",
-  });
+  };
+  await saveConfig(createdConfig);
+  return { generatedPassword, createdConfig };
 }
 
-function validateDaemonOptions(command: DaemonCommand, args: string[]): { human: boolean; foreground: boolean } {
+function validateDaemonOptions(command: DaemonCommand, args: string[]): { json: boolean; foreground: boolean } {
   const allowed = command === "start" || command === "restart"
-    ? new Set(["--human", "--foreground", "--password", "--origin", "--port"])
-    : new Set(["--human"]);
-  let human = false;
+    ? new Set(["--json", "--foreground", "--accept-risk", "--reset-password", "--password", "--origin", "--port"])
+    : new Set(["--json"]);
+  let json = false;
   let foreground = false;
   const seen = new Set<string>();
   for (let index = 0; index < args.length; index++) {
@@ -119,53 +145,84 @@ function validateDaemonOptions(command: DaemonCommand, args: string[]): { human:
     if (!value.startsWith("--") || !allowed.has(value)) throw new UsageError(`unknown option or argument: ${value}`);
     if (seen.has(value)) throw new UsageError(`${value} was provided more than once`);
     seen.add(value);
-    if (value === "--human") { human = true; continue; }
+    if (value === "--json") { json = true; continue; }
     if (value === "--foreground") { foreground = true; continue; }
+    if (value === "--accept-risk") continue;
+    if (value === "--reset-password") continue;
     if (args[index + 1] === undefined || args[index + 1]!.startsWith("--")) throw new UsageError(`option ${value} requires a value`);
     index++;
   }
-  return { human, foreground };
+  return { json, foreground };
 }
 
-async function start(args: string[], human: boolean, foreground: boolean): Promise<void> {
+async function start(args: string[], json: boolean, foreground: boolean, emit = true): Promise<void> {
   const old = await pid();
   if (old && await alive(old)) throw new ControlRequestError({ code: "conflict", message: `already running (PID ${old})` });
   if (old) await unlink(paths().pid).catch(() => undefined);
   await clearStaleControlLock();
-  await configure(args);
-  if (foreground) {
-    await import("./daemon.js");
-    return;
-  }
-  const log = await open(paths().log, "a", 0o600);
-  const child = spawn(process.execPath, [fileURLToPath(new URL("./daemon.js", import.meta.url))], {
-    detached: true,
-    stdio: ["ignore", log.fd, log.fd],
-    env: process.env,
-  });
-  child.unref();
-  await log.close();
-  const deadline = Date.now() + 5000;
-  while (Date.now() < deadline) {
-    const current = await pid();
+  const configured = await configure(args);
+  let child: ReturnType<typeof spawn> | undefined;
+  try {
+    const config = await loadConfig();
+    if (config.bindHost === "0.0.0.0") {
+      const message = "listening on 0.0.0.0 over HTTP can expose the dashboard password and conversation data. Use a trusted network or an HTTPS reverse proxy.";
+      if (json) console.error(JSON.stringify({ schemaVersion: 1, ok: true, kind: "warning", data: { message } }));
+      else console.error(`WARNING: ${message}`);
+    }
+    if (foreground) {
+      if (emit && configured.generatedPassword) success({ state: "starting", generatedPassword: configured.generatedPassword }, json, "result", "start");
+      await import("./daemon.js");
+      return;
+    }
+    const log = await open(paths().log, "a", 0o600);
     try {
-      const ready = JSON.parse(await readFile(paths().ready, "utf8")) as { pid: number };
-      if (current && ready.pid === current && await alive(current)) {
-        success({ state: "running", pid: current }, human);
-        return;
+      child = spawn(process.execPath, [fileURLToPath(new URL("./daemon.js", import.meta.url))], {
+        detached: true,
+        stdio: ["ignore", log.fd, log.fd],
+        env: process.env,
+      });
+      child.unref();
+    } finally {
+      await log.close();
+    }
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const current = await pid();
+      try {
+        const ready = JSON.parse(await readFile(paths().ready, "utf8")) as { pid: number };
+        if (current && ready.pid === current && await alive(current)) {
+          if (emit) {
+            success({
+              state: "running",
+              pid: current,
+              ...(configured.generatedPassword ? { generatedPassword: configured.generatedPassword } : {}),
+            }, json, "result", "start");
+          }
+          return;
+        }
+      } catch {}
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new ControlRequestError({ code: "daemon_unavailable", message: `daemon did not start; inspect ${paths().log}` });
+  } catch (error) {
+    if (child) await terminateSpawnedDaemon(child);
+    await rollbackCreatedConfig(configured.createdConfig);
+    if (configured.replacedConfig) {
+      const current = await loadConfig();
+      if (JSON.stringify(current) === JSON.stringify(configured.replacedConfig.current)) {
+        await saveConfig(configured.replacedConfig.previous);
       }
-    } catch {}
-    await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw error;
   }
-  throw new ControlRequestError({ code: "daemon_unavailable", message: `daemon did not start; inspect ${paths().log}` });
 }
 
-async function stop(human: boolean, emit = true): Promise<{ state: "not_running" | "stopped"; pid?: number }> {
+async function stop(json: boolean, emit = true): Promise<{ state: "not_running" | "stopped"; pid?: number }> {
   const current = await pid();
   if (!current || !await alive(current)) {
     if (current) await unlink(paths().pid).catch(() => undefined);
     const result = { state: "not_running" as const };
-    if (emit) success(result, human);
+    if (emit) success(result, json, "result", "stop");
     return result;
   }
   process.kill(current, "SIGTERM");
@@ -173,8 +230,27 @@ async function stop(human: boolean, emit = true): Promise<{ state: "not_running"
   while (Date.now() < deadline && await alive(current)) await new Promise(resolve => setTimeout(resolve, 50));
   if (await alive(current)) throw new ControlRequestError({ code: "timeout", message: `daemon PID ${current} did not stop` });
   const result = { state: "stopped" as const, pid: current };
-  if (emit) success(result, human);
+  if (emit) success(result, json, "result", "stop");
   return result;
+}
+
+async function resetPassword(json: boolean): Promise<void> {
+  const config = await loadConfig();
+  const generatedPassword = randomBytes(24).toString("base64url");
+  const current = await pid();
+  const running = Boolean(current && await alive(current));
+  if (running) await stop(json, false);
+  await saveConfig({ ...config, passwordHash: await hashPassword(generatedPassword) });
+  if (running) {
+    try {
+      await start([], json, false, false);
+    } catch (error) {
+      await saveConfig(config);
+      await start([], json, false, false);
+      throw error;
+    }
+  }
+  success({ generatedPassword, daemonRestarted: running }, json, "result", "password.reset");
 }
 
 async function readInputFile(path: string): Promise<string> {
@@ -182,6 +258,31 @@ async function readInputFile(path: string): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks).toString("utf8");
+}
+
+async function hiddenPassword(): Promise<string> {
+  if (!process.stdin.isTTY) throw new UsageError("--password requires a TTY; use --password-stdin for automation");
+  process.stderr.write("SSH password: ");
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  let value = "";
+  try {
+    for await (const chunk of process.stdin) {
+      for (const character of String(chunk)) {
+        if (character === "\r" || character === "\n") {
+          process.stderr.write("\n");
+          return value;
+        }
+        if (character === "\u0003") throw new UsageError("password input cancelled");
+        if (character === "\u007f") value = value.slice(0, -1);
+        else value += character;
+      }
+    }
+  } finally {
+    process.stdin.setRawMode(false);
+    process.stdin.pause();
+  }
+  return value;
 }
 
 async function hydrate(command: ParsedCommand): Promise<void> {
@@ -206,6 +307,13 @@ async function hydrate(command: ParsedCommand): Promise<void> {
       delete params[fileKey];
     }
   }
+  if (params.passwordStdin) {
+    params.password = (await readInputFile("-")).replace(/\r?\n$/, "");
+    delete params.passwordStdin;
+  } else if (params.passwordPrompt) {
+    params.password = await hiddenPassword();
+    delete params.passwordPrompt;
+  }
   for (const key of Object.keys(params)) if (params[key] === undefined) delete params[key];
 }
 
@@ -213,12 +321,25 @@ async function runBusiness(args: string[]): Promise<void> {
   const command = parseBusinessCommand(args);
   await hydrate(command);
   const socketPath = paths().controlSocket;
-  const renderEvent = (event: unknown) => success(event, command.human, "event");
-  const result = await controlRequest(socketPath, command.method, command.params, {
-    stream: command.stream,
-    timeoutMs: command.timeoutMs ?? (command.method === "thread.wait" ? 600_000 : command.stream ? 86_400_000 : undefined),
-    onEvent: renderEvent,
-  });
+  const renderEvent = (event: unknown) => success(event, command.json, "event", command.method, command.params);
+  const request = () => controlRequest(socketPath, command.method, command.params, {
+      stream: command.stream,
+      timeoutMs: command.timeoutMs ?? (command.method === "thread.wait" ? 600_000 : command.stream ? 86_400_000 : undefined),
+      onEvent: renderEvent,
+    });
+  let result: unknown;
+  try {
+    result = await request();
+  } catch (error) {
+    if (!(error instanceof ControlRequestError) || error.controlError.code !== "HOST_KEY_UNKNOWN" || command.method !== "host.upsert" || !process.stdin.isTTY || command.json) throw error;
+    const fingerprint = (error.controlError.details as { fingerprint?: string } | undefined)?.fingerprint ?? "unknown fingerprint";
+    const prompt = createInterface({ input: process.stdin, output: process.stderr });
+    const answer = await prompt.question(`Unknown SSH host key ${fingerprint}. Trust and save it? [y/N] `);
+    prompt.close();
+    if (!/^y(?:es)?$/i.test(answer.trim())) throw new ControlRequestError({ code: "HOST_KEY_REJECTED", message: "SSH host key was not accepted", retryable: false });
+    command.params.acceptHostKey = true;
+    result = await request();
+  }
   if (command.output) {
     const encoded = typeof result === "string"
       ? result
@@ -226,48 +347,56 @@ async function runBusiness(args: string[]): Promise<void> {
         ?? (result as { pngBase64?: string } | undefined)?.pngBase64;
     if (typeof encoded !== "string") throw new ControlRequestError({ code: "protocol_error", message: "screenshot response did not contain base64 image data" });
     await writeFile(command.output, Buffer.from(encoded, "base64"), { mode: 0o600 });
-    success({ path: command.output }, command.human);
+    success({ path: command.output }, command.json, "result", command.method, command.params);
   } else if (!command.stream || result !== undefined) {
-    success(result ?? { completed: true }, command.human);
+    success(result ?? { completed: true }, command.json, "result", command.method, command.params);
   }
 }
 
 async function main(): Promise<void> {
   let args = [...rawArgs];
+  if (args[0] === "--json") args = [...args.slice(1), "--json"];
   if (args[0] === "daemon") {
     const nested = args[1];
     if (nested === "url") args = ["dashboard", ...args.slice(2)];
     else args = [nested ?? "help", ...args.slice(2)];
   }
+  if (args[0] === "password") {
+    if (args[1] !== "reset" || args.slice(2).some(value => value !== "--json") || args.filter(value => value === "--json").length > 1) {
+      throw new UsageError("Usage: codex-web-bridge password reset [--json]");
+    }
+    await resetPassword(args.includes("--json"));
+    return;
+  }
   const command = (args[0] ?? "help") as DaemonCommand;
   if (["start", "stop", "restart", "status", "dashboard", "help"].includes(command)) {
     const commandArgs = args.slice(1);
-    const { human, foreground } = validateDaemonOptions(command, commandArgs);
-    if (command === "help") { success({ usage: helpText() }, human); return; }
-    if (command === "start") { await start(commandArgs, human, foreground); return; }
-    if (command === "stop") { await stop(human); return; }
-    if (command === "restart") { await stop(human, false); await start(commandArgs, human, foreground); return; }
+    const { json, foreground } = validateDaemonOptions(command, commandArgs);
+    if (command === "help") { success({ usage: helpText() }, json, "result", "help"); return; }
+    if (command === "start") { await start(commandArgs, json, foreground); return; }
+    if (command === "stop") { await stop(json); return; }
+    if (command === "restart") { await stop(json, false); await start(commandArgs, json, foreground); return; }
     if (command === "status") {
       const current = await pid();
       const running = Boolean(current && await alive(current));
-      success({ state: running ? "running" : "not_running", ...(running ? { pid: current } : {}) }, human);
+      success({ state: running ? "running" : "not_running", ...(running ? { pid: current } : {}) }, json, "result", "status");
       process.exitCode = running ? 0 : 3;
       return;
     }
     const config = await loadConfig();
-    success({ url: config.publicOrigin }, human);
+    success({ url: config.publicOrigin }, json, "result", "dashboard");
     return;
   }
   await runBusiness(args);
 }
 
 main().catch(error => {
-  const human = rawArgs.includes("--human");
+  const json = rawArgs.includes("--json");
   const detail: ControlError = error instanceof ControlRequestError
     ? error.controlError
     : error instanceof UsageError
       ? { code: "usage_error", message: error.message }
       : { code: "internal_error", message: error instanceof Error ? error.message : String(error) };
-  failure(detail, human);
+  failure(detail, json);
   process.exitCode = exitCode(detail.code);
 });
