@@ -22,9 +22,9 @@ const usage = `Usage:
   codex-web-bridge host get HOST_ID
   codex-web-bridge host codex-threads HOST_ID
   codex-web-bridge host add USER@HOST[:PORT] [--id ID] [--name NAME]
-    [--identity-file ABSOLUTE_PATH] [--path PATH_VALUE] [--password|--password-stdin|--clear-password] [--accept-host-key]
+    [--identity-file ABSOLUTE_PATH] [--prepend-path PATH_VALUE] [--password|--password-stdin|--clear-password] [--accept-host-key]
   codex-web-bridge host upsert --id ID --name NAME --hostname HOST --username USER
-    [--identity-file ABSOLUTE_PATH] [--path PATH_VALUE] [--port PORT] [--accept-host-key]
+    [--identity-file ABSOLUTE_PATH] [--prepend-path PATH_VALUE] [--port PORT] [--accept-host-key]
   codex-web-bridge host upsert (--input-json JSON | --input-file PATH)
 
   codex-web-bridge thread list
@@ -73,18 +73,18 @@ Restart the daemon. Remote tmux sessions remain running.`,
   "host get": "Usage: codex-web-bridge host get HOST_ID [--json]\n\nShow one configured SSH host.",
   "host codex-threads": "Usage: codex-web-bridge host codex-threads HOST_ID [--json]\n\nList Codex threads discovered on a host.",
   "host add": `Usage: codex-web-bridge host add USER@HOST[:PORT] [--id ID] [--name NAME]
-  [--identity-file ABSOLUTE_PATH] [--path PATH_VALUE] [--password|--password-stdin|--clear-password]
+  [--identity-file ABSOLUTE_PATH] [--prepend-path PATH_VALUE] [--password|--password-stdin|--clear-password]
   [--accept-host-key] [--json]
 
 Add a host, verify its SSH host key, and optionally supply an in-memory password.
-Use --path to set the complete PATH for remote commands; include system directories such as /usr/bin:/bin.`,
+Use --prepend-path to add absolute directories before the remote host's existing PATH.`,
   "host upsert": `Usage:
   codex-web-bridge host upsert --id ID --name NAME --hostname HOST --username USER
-    [--identity-file ABSOLUTE_PATH] [--path PATH_VALUE] [--port PORT] [--accept-host-key] [--json]
+    [--identity-file ABSOLUTE_PATH] [--prepend-path PATH_VALUE] [--port PORT] [--accept-host-key] [--json]
   codex-web-bridge host upsert (--input-json JSON | --input-file PATH) [--json]
 
 Create or update a host using explicit fields or a JSON object.
---path is a complete colon-separated list of absolute directories.`,
+--prepend-path is a colon-separated list of absolute directories added before the remote PATH.`,
   thread: `Usage:
   codex-web-bridge thread list
   codex-web-bridge thread get THREAD_ID
@@ -222,7 +222,7 @@ export function parseBusinessCommand(argv: string[]): ParsedCommand {
           port: integer(take(options, "--port") ?? "22", "--port", [1, 65535]),
         }),
         identityFile: take(options, "--identity-file"),
-        pathEnv: take(options, "--path"),
+        prependPath: take(options, "--prepend-path"),
         hostKeySha256: take(options, "--host-key"),
         passwordPrompt: flag(options, "--password"),
         passwordStdin: flag(options, "--password-stdin"),

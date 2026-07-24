@@ -25,6 +25,6 @@
 - Pass user-provided remote environment values through the argument-based
   `commandLine`/`shellQuote` path. Never interpolate proxy URLs or other external
   values into tmux command strings.
-- Treat a host-specific remote `PATH` as a complete literal value. Apply it at the
-  SSH command boundary so prerequisite checks, tmux, Codex, helper commands, and
-  streams behave consistently; do not rely on interactive shell startup files.
+- Treat a host-specific PATH setting as a literal list of absolute directories to
+  prepend to the non-interactive SSH `PATH`. Apply it at the SSH command boundary
+  for prerequisite checks, tmux, Codex, helper commands, and streams.

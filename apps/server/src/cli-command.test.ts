@@ -13,13 +13,13 @@ describe("LLM-oriented CLI command parsing", () => {
   it("parses the primary SSH target form with optional in-memory password and host-key acceptance", () => {
     expect(parseBusinessCommand([
       "host", "add", "codex@machine-a.example:2222", "--id", "machine-a", "--name", "Machine A",
-      "--password-stdin", "--accept-host-key", "--path", "/home/codex/.local/bin:/usr/bin",
+      "--password-stdin", "--accept-host-key", "--prepend-path", "/home/codex/.local/bin:/usr/bin",
     ])).toMatchObject({
       method: "host.upsert",
       params: {
         id: "machine-a", name: "Machine A", hostname: "machine-a.example", port: 2222,
         username: "codex", passwordStdin: true, acceptHostKey: true,
-        pathEnv: "/home/codex/.local/bin:/usr/bin",
+        prependPath: "/home/codex/.local/bin:/usr/bin",
       },
     });
   });
@@ -69,13 +69,13 @@ describe("LLM-oriented CLI command parsing", () => {
     expect(parseBusinessCommand([
       "host", "upsert", "--id", "machine-a", "--name", "Machine A",
       "--hostname", "a.example", "--username", "codex",
-      "--host-key", `SHA256:${"A".repeat(43)}`, "--identity-file", "/keys/a", "--path", "/opt/bin:/usr/bin",
+      "--host-key", `SHA256:${"A".repeat(43)}`, "--identity-file", "/keys/a", "--prepend-path", "/opt/bin:/usr/bin",
     ])).toMatchObject({
       method: "host.upsert",
       params: {
         id: "machine-a", name: "Machine A", hostname: "a.example", port: 22,
         username: "codex", hostKeySha256: `SHA256:${"A".repeat(43)}`, identityFile: "/keys/a",
-        pathEnv: "/opt/bin:/usr/bin",
+        prependPath: "/opt/bin:/usr/bin",
       },
     });
   });

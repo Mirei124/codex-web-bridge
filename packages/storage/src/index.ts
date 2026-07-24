@@ -21,7 +21,7 @@ const Database = (process.versions.bun
   : (await import("better-sqlite3")).default) as DatabaseConstructor;
 
 export interface SessionRecord { id: string; csrfToken: string; createdAt: number; expiresAt: number }
-export interface HostRecord { id: string; name: string; hostname: string; port: number; username: string; hostKeySha256: string; identityFile: string; pathEnv?: string; createdAt: number }
+export interface HostRecord { id: string; name: string; hostname: string; port: number; username: string; hostKeySha256: string; identityFile: string; prependPath?: string; createdAt: number }
 export interface ThreadRecord { id: string; hostId: string; codexThreadId?: string; tmuxSession: string; remotePort?: number; workingDirectory: string; proxy?: string; title: string; status: string; createdAt: number; updatedAt: number }
 export interface MessageRecord { id: string; threadId: string; role: string; text: string; streaming: number; createdAt: number }
 export interface PendingRecord { id: string; threadId: string; payload: string; rpcId: string; method: string; params: string; resolvedAt?: number; createdAt: number }
@@ -43,7 +43,7 @@ export class Storage {
       CREATE TABLE IF NOT EXISTS hosts (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, hostname TEXT NOT NULL,
         port INTEGER NOT NULL DEFAULT 22, username TEXT NOT NULL,
-        host_key_sha256 TEXT NOT NULL, identity_file TEXT NOT NULL, path_env TEXT,
+        host_key_sha256 TEXT NOT NULL, identity_file TEXT NOT NULL, prepend_path TEXT,
         created_at INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS threads (
@@ -63,7 +63,10 @@ export class Storage {
       );
     `);
     const hostColumns = this.db.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
-    if (!hostColumns.some(column => column.name === "path_env")) this.db.exec("ALTER TABLE hosts ADD COLUMN path_env TEXT");
+    if (!hostColumns.some(column => column.name === "prepend_path")) {
+      this.db.exec("ALTER TABLE hosts ADD COLUMN prepend_path TEXT");
+      if (hostColumns.some(column => column.name === "path_env")) this.db.exec("UPDATE hosts SET prepend_path=path_env WHERE path_env IS NOT NULL");
+    }
     const threadColumns = this.db.prepare("PRAGMA table_info(threads)").all() as Array<{ name: string }>;
     if (!threadColumns.some(column => column.name === "title")) this.db.exec("ALTER TABLE threads ADD COLUMN title TEXT NOT NULL DEFAULT 'Codex thread'");
     if (!threadColumns.some(column => column.name === "remote_port")) this.db.exec("ALTER TABLE threads ADD COLUMN remote_port INTEGER");
@@ -83,9 +86,9 @@ export class Storage {
   }
   deleteSession(id: string): void { this.db.prepare("DELETE FROM login_sessions WHERE id = ?").run(id); }
   pruneSessions(now = Date.now()): void { this.db.prepare("DELETE FROM login_sessions WHERE expires_at <= ?").run(now); }
-  hosts(): HostRecord[] { return this.db.prepare("SELECT id,name,hostname,port,username,host_key_sha256 AS hostKeySha256,identity_file AS identityFile,path_env AS pathEnv,created_at AS createdAt FROM hosts ORDER BY name").all() as HostRecord[]; }
-  host(id: string): HostRecord | undefined { return this.db.prepare("SELECT id,name,hostname,port,username,host_key_sha256 AS hostKeySha256,identity_file AS identityFile,path_env AS pathEnv,created_at AS createdAt FROM hosts WHERE id=?").get(id) as HostRecord | undefined; }
-  upsertHost(host: HostRecord): void { this.db.prepare("INSERT INTO hosts(id,name,hostname,port,username,host_key_sha256,identity_file,path_env,created_at) VALUES(@id,@name,@hostname,@port,@username,@hostKeySha256,@identityFile,@pathEnv,@createdAt) ON CONFLICT(id) DO UPDATE SET name=excluded.name,hostname=excluded.hostname,port=excluded.port,username=excluded.username,host_key_sha256=excluded.host_key_sha256,identity_file=excluded.identity_file,path_env=excluded.path_env").run({ ...host, pathEnv: host.pathEnv ?? null }); }
+  hosts(): HostRecord[] { return this.db.prepare("SELECT id,name,hostname,port,username,host_key_sha256 AS hostKeySha256,identity_file AS identityFile,prepend_path AS prependPath,created_at AS createdAt FROM hosts ORDER BY name").all() as HostRecord[]; }
+  host(id: string): HostRecord | undefined { return this.db.prepare("SELECT id,name,hostname,port,username,host_key_sha256 AS hostKeySha256,identity_file AS identityFile,prepend_path AS prependPath,created_at AS createdAt FROM hosts WHERE id=?").get(id) as HostRecord | undefined; }
+  upsertHost(host: HostRecord): void { this.db.prepare("INSERT INTO hosts(id,name,hostname,port,username,host_key_sha256,identity_file,prepend_path,created_at) VALUES(@id,@name,@hostname,@port,@username,@hostKeySha256,@identityFile,@prependPath,@createdAt) ON CONFLICT(id) DO UPDATE SET name=excluded.name,hostname=excluded.hostname,port=excluded.port,username=excluded.username,host_key_sha256=excluded.host_key_sha256,identity_file=excluded.identity_file,prepend_path=excluded.prepend_path").run({ ...host, prependPath: host.prependPath ?? null }); }
   threads(): ThreadRecord[] { return this.db.prepare("SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,title,status,created_at AS createdAt,updated_at AS updatedAt FROM threads ORDER BY updated_at DESC").all() as ThreadRecord[]; }
   thread(id: string): ThreadRecord | undefined { return this.db.prepare("SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,title,status,created_at AS createdAt,updated_at AS updatedAt FROM threads WHERE id=?").get(id) as ThreadRecord | undefined; }
   createThread(thread: ThreadRecord): void { this.db.prepare("INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,title,status,created_at,updated_at) VALUES(@id,@hostId,@codexThreadId,@tmuxSession,@remotePort,@workingDirectory,@proxy,@title,@status,@createdAt,@updatedAt)").run({ ...thread, codexThreadId: thread.codexThreadId ?? null, remotePort: thread.remotePort ?? null, proxy: thread.proxy ?? null }); }
