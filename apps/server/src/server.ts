@@ -90,13 +90,14 @@ export async function buildServer(config: AppConfig, storage: Storage, options: 
 
   app.get(apiRoutes.session, async request => ({ authenticated: true, csrfToken: request.loginSession!.csrfToken }));
   app.post(apiRoutes.logout, async (request, reply) => { const sessionId=request.loginSession!.id;storage.deleteSession(sessionId);releaseLeases(sessionId);for(const [socket,state] of sockets)if(state.sessionId===sessionId)socket.close(1000,"logged out");reply.clearCookie("cwb_session", { path: "/", secure: config.publicOrigin.startsWith("https://"), sameSite: "strict" }); return reply.code(204).send(); });
-  app.get(apiRoutes.hosts, async () => storage.hosts().map(h => ({ id: h.id, name: h.name, address: `${h.username}@${h.hostname}:${h.port}`, status: runtime.hostStatus?.(h.id)??"offline", hostname:h.hostname,port:h.port,username:h.username,hostKeySha256:h.hostKeySha256,identityFile:h.identityFile })));
+  app.get(apiRoutes.hosts, async () => storage.hosts().map(h => ({ id: h.id, name: h.name, address: `${h.username}@${h.hostname}:${h.port}`, status: runtime.hostStatus?.(h.id)??"offline", hostname:h.hostname,port:h.port,username:h.username,hostKeySha256:h.hostKeySha256,identityFile:h.identityFile,pathEnv:h.pathEnv })));
   app.post<{ Body: Partial<Omit<HostRecord,"createdAt">> & {password?:string;clearPassword?:boolean;acceptHostKey?:boolean} }>(apiRoutes.hosts, async (request, reply) => {
     const value = request.body ?? {};
     if ((value.id !== undefined && typeof value.id !== "string") || (value.name !== undefined && typeof value.name !== "string")
       || typeof value.hostname !== "string" || !value.hostname.trim() || value.hostname.length > 253
       || !Number.isInteger(value.port) || value.port! < 1 || value.port! > 65535 || typeof value.username !== "string" || !value.username.trim()
       || value.username.length > 128 || (value.identityFile !== undefined && value.identityFile !== "" && !isAbsolute(value.identityFile))
+      || (value.pathEnv !== undefined && value.pathEnv !== "" && (typeof value.pathEnv !== "string" || !validPathEnv(value.pathEnv)))
       || (value.hostKeySha256 !== undefined && !/^SHA256:[A-Za-z0-9+/]{43}=?$/.test(value.hostKeySha256))
       || (value.password !== undefined && typeof value.password !== "string") || (value.clearPassword !== undefined && typeof value.clearPassword !== "boolean")
       || (value.acceptHostKey !== undefined && typeof value.acceptHostKey !== "boolean") || (value.password !== undefined && value.clearPassword)
@@ -129,6 +130,7 @@ export async function buildServer(config: AppConfig, storage: Storage, options: 
       username: value.username.trim(),
       hostKeySha256: verified.fingerprint,
       identityFile: persisted.identityFile ?? "",
+      pathEnv: Object.hasOwn(value, "pathEnv") ? persisted.pathEnv?.trim() || undefined : previous?.pathEnv,
       createdAt: Date.now(),
     };
     if (password !== undefined) runtime.setHostPassword?.(host.id, password);
@@ -204,5 +206,6 @@ export async function buildServer(config: AppConfig, storage: Storage, options: 
 function parseCookies(header:string|undefined):Record<string,string>{const result:Record<string,string>={};if(!header)return result;for(const part of header.split(";")){const separator=part.indexOf("=");if(separator<=0)continue;try{const key=decodeURIComponent(part.slice(0,separator).trim()),value=decodeURIComponent(part.slice(separator+1).trim());if(key&&!Object.hasOwn(result,key))result[key]=value;}catch{continue;}}return result;}
 function allocatePort(storage:Storage,hostId:string):number{const used=new Set(storage.threads().filter(thread=>thread.hostId===hostId&&thread.status!=="exited").map(thread=>thread.remotePort));for(let attempt=0;attempt<100;attempt++){const port=randomInt(20000,60000);if(!used.has(port))return port;}throw new Error("unable to allocate app-server port");}
 function validId(value:string):boolean{return typeof value==="string"&&/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value);}
-function hostConnectionChanged(previous:HostRecord,next:HostRecord):boolean{return previous.hostname!==next.hostname||previous.username!==next.username||previous.port!==next.port||previous.identityFile!==next.identityFile;}
+function hostConnectionChanged(previous:HostRecord,next:HostRecord):boolean{return previous.hostname!==next.hostname||previous.username!==next.username||previous.port!==next.port||previous.identityFile!==next.identityFile||previous.pathEnv!==next.pathEnv;}
+function validPathEnv(value:string):boolean{return value.length<=4096&&!/[\0\r\n]/.test(value)&&value.split(":").every(directory=>directory.startsWith("/"));}
 function normalizedProxy(value:unknown):string|undefined|null{if(value===undefined||value==="")return undefined;if(typeof value!=="string")return null;const trimmed=value.trim();if(!trimmed)return undefined;try{const url=new URL(trimmed);return url.protocol==="http:"||url.protocol==="https:"?trimmed:null;}catch{return null;}}

@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it } from "vitest";
-import { commandLine, shellQuote, TerminalSnapshotRenderer, TmuxCodexRuntime, type CommandResult, type RemoteExecutor } from "../src/index.js";
+import { commandLine, shellQuote, TerminalSnapshotRenderer, TmuxCodexRuntime, withRemotePath, type CommandResult, type RemoteExecutor } from "../src/index.js";
 
 class FakeRemote implements RemoteExecutor {
   calls: Array<[string, readonly string[]]> = [];
@@ -23,6 +23,13 @@ class FakeRemote implements RemoteExecutor {
 }
 describe("remote command safety", () => {
   it("quotes every argument at the SSH shell boundary", () => { expect(commandLine("printf", ["a'b", "$(bad)"])).toBe("'printf' 'a'\\''b' '$(bad)'"); expect(shellQuote("")).toBe("''"); });
+  it("applies a literal host PATH to command lookup and remote programs", async () => {
+    const remote = new FakeRemote(); const path = "/home/alice/.local/share/tmux/bin:/usr/bin:/bin"; const wrapped = withRemotePath(remote, path);
+    await wrapped.execute("command", ["-v", "tmux"]);
+    await wrapped.execute("tmux", ["list-sessions"]);
+    expect(remote.calls[0]).toEqual(["sh", ["-c", 'PATH=$1; export PATH; command -v "$2"', "cwb-path", path, "tmux"]]);
+    expect(remote.calls[1]).toEqual(["sh", ["-c", 'PATH=$1; export PATH; shift; exec "$@"', "cwb-path", path, "tmux", "list-sessions"]]);
+  });
   it("builds app server and viewer panes without interpolating user values", async () => {
     const remote = new FakeRemote(); const runtime = new TmuxCodexRuntime(remote, { runtimeDirectory: "/safe/runtime" });
     const session = await runtime.start("cwb_1", "/repo with spaces", 43123); const attached = await runtime.attachViewer(session, "/repo with spaces", "thread-1");

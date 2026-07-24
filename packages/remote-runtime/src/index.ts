@@ -12,6 +12,18 @@ export interface RemoteExecutor {
   realpath?(path: string): Promise<string>;
 }
 
+export function withRemotePath(remote: RemoteExecutor, path: string | undefined): RemoteExecutor {
+  if (!path) return remote;
+  return {
+    execute: (program, args = []) => program === "command" && args[0] === "-v" && typeof args[1] === "string"
+      ? remote.execute("sh", ["-c", 'PATH=$1; export PATH; command -v "$2"', "cwb-path", path, args[1]])
+      : remote.execute("sh", ["-c", 'PATH=$1; export PATH; shift; exec "$@"', "cwb-path", path, program, ...args]),
+    stream: (program, args = []) => remote.stream("sh", ["-c", 'PATH=$1; export PATH; shift; exec "$@"', "cwb-path", path, program, ...args]),
+    ...(remote.probeTcp ? { probeTcp: remote.probeTcp.bind(remote) } : {}),
+    ...(remote.realpath ? { realpath: remote.realpath.bind(remote) } : {}),
+  };
+}
+
 /** POSIX-shell quoting used only at the SSH protocol's unavoidable shell boundary. */
 export function shellQuote(value: string): string { return `'${value.replaceAll("'", `'\\''`)}'`; }
 export function commandLine(program: string, args: readonly string[] = []): string { return [program, ...args].map(shellQuote).join(" "); }

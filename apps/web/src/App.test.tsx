@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadDetail } from "@cwb/protocol";
-import App from "./App";
+import App, { HostDialog } from "./App";
 
 let terminalInput: ((data: string) => void) | undefined;
 let terminalWrites: string[] = [];
@@ -121,7 +121,7 @@ describe("dashboard security and operations", () => {
     });
     vi.stubGlobal("fetch", fetch); render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "添加主机" }));
-    for (const [label, value] of [["主机名或 IP","a.internal"],["SSH 用户名","codex"],["SSH 密码（可选）","memory-only"]]) {
+    for (const [label, value] of [["主机名或 IP","a.internal"],["SSH 用户名","codex"],["PATH 环境变量（可选）","/home/codex/.local/bin:/usr/bin"],["SSH 密码（可选）","memory-only"]]) {
       fireEvent.change(screen.getByLabelText(label), { target: { value } });
     }
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
@@ -130,15 +130,31 @@ describe("dashboard security and operations", () => {
     expect(screen.getByText("a.internal:22")).toBeInTheDocument();
     const firstSave = fetch.mock.calls.find(call => call[0] === "/api/hosts" && (call[1] as RequestInit | undefined)?.method === "POST")![1] as RequestInit;
     expect(JSON.parse(String(firstSave.body))).toEqual({
-      hostname: "a.internal", port: 22, username: "codex", password: "memory-only",
+      hostname: "a.internal", port: 22, username: "codex", pathEnv: "/home/codex/.local/bin:/usr/bin", password: "memory-only",
     });
     fireEvent.click(screen.getByRole("button", { name: "确认并保存" }));
     await waitFor(() => expect(saveAttempts).toBe(2));
     const saves = fetch.mock.calls.filter(call => call[0] === "/api/hosts" && (call[1] as RequestInit | undefined)?.method === "POST");
     expect(JSON.parse(String((saves[1]![1] as RequestInit).body))).toEqual({
-      hostname: "a.internal", port: 22, username: "codex", password: "memory-only",
+      hostname: "a.internal", port: 22, username: "codex", pathEnv: "/home/codex/.local/bin:/usr/bin", password: "memory-only",
       hostKeySha256: scannedFingerprint, acceptHostKey: true,
     });
+  });
+
+  it("sends an explicit empty PATH when clearing an existing host setting", async () => {
+    const fingerprint = `SHA256:${"C".repeat(43)}`;
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response({ error: "confirmation required", code: "HOST_KEY_UNKNOWN", details: { fingerprint } }, 409))
+      .mockResolvedValueOnce(response({ id: "a" }, 201));
+    vi.stubGlobal("fetch", fetch);
+    render(<HostDialog host={{ id: "a", name: "A", address: "codex@a.internal:22", status: "offline", hostname: "a.internal", port: 22, username: "codex", pathEnv: "/custom/bin:/usr/bin:/bin" }} onClose={() => undefined} onSaved={() => undefined} />);
+    fireEvent.change(screen.getByLabelText("PATH 环境变量（可选）"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await screen.findByRole("heading", { name: "确认 SSH 主机指纹" });
+    expect(JSON.parse(String((fetch.mock.calls[0]![1] as RequestInit).body))).toMatchObject({ id: "a", pathEnv: "" });
+    fireEvent.click(screen.getByRole("button", { name: "确认并保存" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(String((fetch.mock.calls[1]![1] as RequestInit).body))).toMatchObject({ id: "a", pathEnv: "", acceptHostKey: true });
   });
 
   it("discovers host Codex threads and fills thread ID and cwd while retaining manual fields", async () => {

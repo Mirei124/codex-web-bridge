@@ -11,6 +11,7 @@ export interface HostSummary {
   username?: string;
   hostKeySha256?: string;
   identityFile?: string;
+  pathEnv?: string;
 }
 
 export interface HostConfig {
@@ -22,6 +23,7 @@ export interface HostConfig {
   hostKeySha256?: string;
   acceptHostKey?: boolean;
   identityFile?: string;
+  pathEnv?: string;
   password?: string;
   clearPassword?: boolean;
 }
