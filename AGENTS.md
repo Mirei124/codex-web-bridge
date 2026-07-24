@@ -74,3 +74,6 @@
 - Start bridge-managed Codex app-server and viewer processes with the invocation
   override `-c check_for_update_on_startup=false`; do not mutate the remote user's
   global Codex configuration merely to suppress bridge terminal upgrade prompts.
+- Daemon shutdown first allows five seconds for graceful `SIGTERM` cleanup, then
+  escalates the already validated daemon PID to `SIGKILL`. Keep restart, password
+  changes, and explicit stop on this same shutdown path.

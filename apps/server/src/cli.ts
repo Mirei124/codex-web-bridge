@@ -253,7 +253,12 @@ async function stop(json: boolean, emit = true): Promise<{ state: "not_running" 
   process.kill(current, "SIGTERM");
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline && await alive(current)) await new Promise(resolve => setTimeout(resolve, 50));
-  if (await alive(current)) throw new ControlRequestError({ code: "timeout", message: `daemon PID ${current} did not stop` });
+  if (await alive(current)) {
+    process.kill(current, "SIGKILL");
+    const killDeadline = Date.now() + 1000;
+    while (Date.now() < killDeadline && await alive(current)) await new Promise(resolve => setTimeout(resolve, 50));
+    if (await alive(current)) throw new ControlRequestError({ code: "timeout", message: `daemon PID ${current} survived SIGKILL` });
+  }
   const result = { state: "stopped" as const, pid: current };
   if (emit) success(result, json, "result", "stop");
   return result;

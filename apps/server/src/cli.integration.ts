@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 
 const cli = resolve(import.meta.dirname, "../dist/cli.js");
@@ -142,6 +142,24 @@ describe("built CLI and daemon", () => {
       error: { code: "daemon_unavailable", retryable: true },
     });
   });
+
+  it("escalates stop to SIGKILL when a daemon ignores SIGTERM", async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "cwb-cli-test-"));
+    const stubborn = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)", "__daemon"], {
+      detached: true,
+      stdio: "ignore",
+    });
+    stubborn.unref();
+    await new Promise<void>((resolveSpawn, reject) => {
+      stubborn.once("spawn", resolveSpawn);
+      stubborn.once("error", reject);
+    });
+    await writeFile(join(dataDir, "daemon.pid"), JSON.stringify({ pid: stubborn.pid, marker: "codex-web-bridge-daemon" }));
+
+    const stopped = run(["stop"], { ...process.env, CWB_DATA_DIR: dataDir });
+
+    expect(output(stopped)).toMatchObject({ data: { state: "stopped", pid: stubborn.pid } });
+  }, 10_000);
 
   it("rejects a short first-run password without creating configuration", async () => {
     dataDir = await mkdtemp(join(tmpdir(), "cwb-cli-test-"));
