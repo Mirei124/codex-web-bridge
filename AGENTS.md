@@ -51,3 +51,7 @@
   commands such as `command -v`, accept a non-empty absolute result when the status is
   `null`, then use that resolved absolute executable path for subsequent tmux/Codex
   commands.
+- Recover remote command status at the `SshConnection.execute` boundary with a
+  per-command shell marker instead of relying exclusively on the SSH channel's
+  optional `exit-status`. Keep the marker out of returned stderr so callers retain
+  normal command semantics.

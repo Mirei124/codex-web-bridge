@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import { createServer, type Server, type Socket } from "node:net";
 import { Client, type ConnectConfig, type ClientChannel } from "ssh2";
 export { TerminalSnapshotRenderer, type RenderedTerminalSnapshot, type TerminalSnapshotOptions } from "./terminal-snapshot.js";
@@ -38,9 +39,20 @@ export class SshConnection implements RemoteExecutor {
   }
   close(): void { this.client?.end(); this.client = undefined; }
   async execute(program: string, args: readonly string[] = []): Promise<CommandResult> {
-    const channel = await this.exec(commandLine(program, args)); let stdout = "", stderr = "", code: number | null = null, signal: string | undefined;
+    const marker = `__CWB_EXIT_${randomUUID()}__`;
+    const command = commandLine(program, args);
+    const channel = await this.exec(`${command}; cwb_exit_status=$?; printf '\\n${marker}%s\\n' "$cwb_exit_status" >&2; exit "$cwb_exit_status"`);
+    let stdout = "", stderr = "", code: number | null = null, signal: string | undefined;
     channel.on("data", (chunk: Buffer) => stdout += chunk.toString()); channel.stderr.on("data", (chunk: Buffer) => stderr += chunk.toString());
     await new Promise<void>((resolve, reject) => { channel.once("exit", (c: number | null, s?: string) => { code = c; signal = s; }).once("close", resolve).once("error", reject); });
+    const markerStart = stderr.lastIndexOf(`\n${marker}`);
+    if (markerStart >= 0) {
+      const encodedStatus = stderr.slice(markerStart + marker.length + 1).trim();
+      if (/^\d+$/.test(encodedStatus)) {
+        code = Number(encodedStatus);
+        stderr = stderr.slice(0, markerStart);
+      }
+    }
     return { stdout, stderr, code, signal };
   }
   async stream(program: string, args: readonly string[] = []): Promise<CommandStream> {
