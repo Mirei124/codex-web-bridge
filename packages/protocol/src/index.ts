@@ -14,12 +14,13 @@ export interface HostSummary {
 }
 
 export interface HostConfig {
-  id: string;
-  name: string;
+  id?: string;
+  name?: string;
   hostname: string;
   port: number;
   username: string;
   hostKeySha256?: string;
+  acceptHostKey?: boolean;
   identityFile?: string;
   password?: string;
   clearPassword?: boolean;

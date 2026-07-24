@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import type { CodexThreadSummary, HostConfig, HostSummary, PendingRequest, ResolveRequest, ServerEvent, ThreadDetail, ThreadSummary } from "@cwb/protocol";
-import { api } from "./api";
+import { ApiError, api } from "./api";
 import { Terminal } from "./Terminal";
 import { useThreadEvents } from "./useThreadEvents";
 
@@ -32,10 +32,38 @@ function CreateDialog({ hosts, mode, onClose, onDone }: { hosts: HostSummary[]; 
 export function HostDialog({ host, onClose, onSaved }: { host?: HostSummary; onClose(): void; onSaved(): void }) {
   const match = host?.address.match(/^(.+)@(.+):(\d+)$/);
   const [form, setForm] = useState<HostConfig>({ id: host?.id ?? "", name: host?.name ?? "", hostname: host?.hostname ?? match?.[2] ?? "", port: host?.port ?? Number(match?.[3] ?? 22), username: host?.username ?? match?.[1] ?? "", hostKeySha256: host?.hostKeySha256 ?? "", identityFile: host?.identityFile ?? "" });
-  const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false); const set = <K extends keyof HostConfig>(key: K, value: HostConfig[K]) => setForm(old => ({ ...old, [key]: value }));
-  async function submit(event: FormEvent) { event.preventDefault(); setError(""); setBusy(true); try { await api.saveHost({ ...form, ...(password ? { password } : {}) }); onSaved(); } catch (e) { setError(e instanceof Error ? e.message : "保存失败"); } finally { setBusy(false); } }
-  const complete = form.id.trim() && form.name.trim() && form.hostname.trim() && form.port > 0 && form.port <= 65535 && form.username.trim() && /^SHA256:[A-Za-z0-9+/]{43}=?$/.test(form.hostKeySha256 ?? "");
-  return <div className="modal-backdrop"><form className="card modal" onSubmit={submit}><h2>{host ? "编辑主机" : "新增主机"}</h2><p>请先通过可信渠道核验 SSH 主机指纹。认证可使用 daemon 内存中的密码、B 上的私钥，或 B 已配置的 SSH Agent/默认密钥。</p><label>主机 ID<input value={form.id} disabled={Boolean(host)} onChange={e => set("id", e.target.value)} placeholder="machine-a" /></label><label>名称<input value={form.name} onChange={e => set("name", e.target.value)} /></label><label>主机名或 IP<input value={form.hostname} onChange={e => set("hostname", e.target.value)} /></label><label>SSH 端口<input type="number" min="1" max="65535" value={form.port} onChange={e => set("port", Number(e.target.value))} /></label><label>SSH 用户名<input value={form.username} onChange={e => set("username", e.target.value)} /></label><label>主机密钥指纹<input value={form.hostKeySha256 ?? ""} onChange={e => set("hostKeySha256", e.target.value)} placeholder="SHA256:…" /></label><label>SSH 密码（可选）<input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} placeholder={host ? "留空表示不修改" : "仅保存在 daemon 内存"} /></label><label>B 上的私钥路径（可选）<input value={form.identityFile ?? ""} onChange={e => set("identityFile", e.target.value)} placeholder="留空则尝试 Agent 或默认密钥" /></label>{error && <div className="error">{error}</div>}<div className="actions"><button type="button" className="secondary" onClick={onClose}>取消</button><button disabled={!complete || busy}>{busy ? "保存中…" : "保存"}</button></div></form></div>;
+  const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  const [confirmation, setConfirmation] = useState<{ fingerprint: string; payload: HostConfig }>();
+  const set = <K extends keyof HostConfig>(key: K, value: HostConfig[K]) => setForm(old => ({ ...old, [key]: value }));
+  function payload(): HostConfig {
+    const id = form.id?.trim(); const name = form.name?.trim(); const fingerprint = form.hostKeySha256?.trim(); const identityFile = form.identityFile?.trim();
+    return {
+      ...(id ? { id } : {}), ...(name ? { name } : {}),
+      hostname: form.hostname.trim(), port: form.port, username: form.username.trim(),
+      ...(fingerprint ? { hostKeySha256: fingerprint } : {}),
+      ...(identityFile ? { identityFile } : {}), ...(password ? { password } : {}),
+    };
+  }
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setError(""); setBusy(true);
+    try { await api.saveHost(payload()); onSaved(); }
+    catch (e) {
+      const fingerprint = e instanceof ApiError && e.code === "HOST_KEY_UNKNOWN" && typeof e.details === "object" && e.details !== null && "fingerprint" in e.details && typeof e.details.fingerprint === "string" ? e.details.fingerprint : undefined;
+      if (fingerprint) setConfirmation({ fingerprint, payload: payload() });
+      else setError(e instanceof Error ? e.message : "保存失败");
+    } finally { setBusy(false); }
+  }
+  async function confirmFingerprint() {
+    if (!confirmation) return;
+    setError(""); setBusy(true);
+    try { await api.saveHost({ ...confirmation.payload, hostKeySha256: confirmation.fingerprint, acceptHostKey: true }); onSaved(); }
+    catch (e) { setConfirmation(undefined); setError(e instanceof Error ? e.message : "保存失败"); }
+    finally { setBusy(false); }
+  }
+  const fingerprint = form.hostKeySha256?.trim() ?? "";
+  const complete = form.hostname.trim() && form.port > 0 && form.port <= 65535 && form.username.trim() && (!fingerprint || /^SHA256:[A-Za-z0-9+/]{43}=?$/.test(fingerprint));
+  if (confirmation) return <div className="modal-backdrop"><section className="card modal" role="dialog" aria-labelledby="host-key-title"><h2 id="host-key-title">确认 SSH 主机指纹</h2><p>目标主机 <strong>{confirmation.payload.hostname}:{confirmation.payload.port}</strong> 返回了以下密钥指纹。请通过可信渠道核对后再确认：</p><pre>{confirmation.fingerprint}</pre>{error && <div className="error">{error}</div>}<div className="actions"><button type="button" className="secondary" disabled={busy} onClick={() => setConfirmation(undefined)}>返回修改</button><button type="button" disabled={busy} onClick={() => void confirmFingerprint()}>{busy ? "保存中…" : "确认并保存"}</button></div></section></div>;
+  return <div className="modal-backdrop"><form className="card modal" onSubmit={submit}><h2>{host ? "编辑主机" : "新增主机"}</h2><p>提交后会扫描并展示 SSH 主机指纹供你确认。认证可使用 daemon 内存中的密码、B 上的私钥，或 B 已配置的 SSH Agent/默认密钥。</p><label>主机 ID（可选）<input value={form.id ?? ""} disabled={Boolean(host)} onChange={e => set("id", e.target.value)} placeholder="留空则自动生成" /></label><label>名称（可选）<input value={form.name ?? ""} onChange={e => set("name", e.target.value)} placeholder="留空则自动生成" /></label><label>主机名或 IP<input value={form.hostname} onChange={e => set("hostname", e.target.value)} /></label><label>SSH 端口<input type="number" min="1" max="65535" value={form.port} onChange={e => set("port", Number(e.target.value))} /></label><label>SSH 用户名<input value={form.username} onChange={e => set("username", e.target.value)} /></label><label>主机密钥指纹（可选）<input value={form.hostKeySha256 ?? ""} onChange={e => set("hostKeySha256", e.target.value)} placeholder="SHA256:…" /></label><label>SSH 密码（可选）<input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} placeholder={host ? "留空表示不修改" : "仅保存在 daemon 内存"} /></label><label>B 上的私钥路径（可选）<input value={form.identityFile ?? ""} onChange={e => set("identityFile", e.target.value)} placeholder="留空则尝试 Agent 或默认密钥" /></label>{error && <div className="error">{error}</div>}<div className="actions"><button type="button" className="secondary" onClick={onClose}>取消</button><button disabled={!complete || busy}>{busy ? "扫描中…" : "保存"}</button></div></form></div>;
 }
 
 export default function App() {

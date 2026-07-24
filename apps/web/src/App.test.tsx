@@ -102,18 +102,39 @@ describe("dashboard security and operations", () => {
     expect(JSON.parse(String(resume.body))).toEqual({ hostId: "a", codexThreadId: "codex-123", cwd: "/repo/resumed" });
   });
 
-  it("adds a password-authenticated host from the main panel", async () => {
-    const fetch = authenticatedFetch(); vi.stubGlobal("fetch", fetch); render(<App />);
+  it("confirms a scanned fingerprint before adding a host with optional metadata", async () => {
+    const baseFetch = authenticatedFetch();
+    const scannedFingerprint = `SHA256:${"B".repeat(43)}`;
+    let saveAttempts = 0;
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const path = typeof input === "string" ? input : input.toString();
+      if (path === "/api/hosts" && init?.method === "POST") {
+        saveAttempts += 1;
+        return saveAttempts === 1
+          ? response({ error: "host key confirmation required", code: "HOST_KEY_UNKNOWN", details: { fingerprint: scannedFingerprint } }, 409)
+          : response({ id: "generated-id" }, 201);
+      }
+      return baseFetch(input, init);
+    });
+    vi.stubGlobal("fetch", fetch); render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "添加主机" }));
-    for (const [label, value] of [["主机 ID","new-a"],["名称","New A"],["主机名或 IP","a.internal"],["SSH 用户名","codex"],["主机密钥指纹",`SHA256:${"A".repeat(43)}`],["SSH 密码（可选）","memory-only"]]) {
+    for (const [label, value] of [["主机名或 IP","a.internal"],["SSH 用户名","codex"],["SSH 密码（可选）","memory-only"]]) {
       fireEvent.change(screen.getByLabelText(label), { target: { value } });
     }
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
-    await waitFor(() => expect(fetch.mock.calls.some(call => call[0] === "/api/hosts" && (call[1] as RequestInit | undefined)?.method === "POST")).toBe(true));
-    const saved = fetch.mock.calls.find(call => call[0] === "/api/hosts" && (call[1] as RequestInit | undefined)?.method === "POST")![1] as RequestInit;
-    expect(JSON.parse(String(saved.body))).toEqual({
-      id: "new-a", name: "New A", hostname: "a.internal", port: 22, username: "codex",
-      hostKeySha256: `SHA256:${"A".repeat(43)}`, identityFile: "", password: "memory-only",
+    expect(await screen.findByRole("heading", { name: "确认 SSH 主机指纹" })).toBeInTheDocument();
+    expect(screen.getByText(scannedFingerprint)).toBeInTheDocument();
+    expect(screen.getByText("a.internal:22")).toBeInTheDocument();
+    const firstSave = fetch.mock.calls.find(call => call[0] === "/api/hosts" && (call[1] as RequestInit | undefined)?.method === "POST")![1] as RequestInit;
+    expect(JSON.parse(String(firstSave.body))).toEqual({
+      hostname: "a.internal", port: 22, username: "codex", password: "memory-only",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "确认并保存" }));
+    await waitFor(() => expect(saveAttempts).toBe(2));
+    const saves = fetch.mock.calls.filter(call => call[0] === "/api/hosts" && (call[1] as RequestInit | undefined)?.method === "POST");
+    expect(JSON.parse(String((saves[1]![1] as RequestInit).body))).toEqual({
+      hostname: "a.internal", port: 22, username: "codex", password: "memory-only",
+      hostKeySha256: scannedFingerprint, acceptHostKey: true,
     });
   });
 

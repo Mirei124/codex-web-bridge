@@ -5,7 +5,12 @@ import type {
 import { apiRoutes } from "@cwb/protocol";
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(
+    public status: number,
+    message: string,
+    public code?: string,
+    public details?: unknown,
+  ) { super(message); }
 }
 
 let csrfToken: string | undefined;
@@ -18,8 +23,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "content-type": "application/json", ...(init?.method && init.method !== "GET" && csrfToken ? { "x-csrf-token": csrfToken } : {}), ...init?.headers },
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as { message?: string; error?: string };
-    throw new ApiError(response.status, body.message ?? body.error ?? `Request failed (${response.status})`);
+    const body = await response.json().catch(() => ({})) as { message?: string; error?: string; code?: string; details?: unknown };
+    throw new ApiError(response.status, body.message ?? body.error ?? `Request failed (${response.status})`, body.code, body.details);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;

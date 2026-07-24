@@ -11,6 +11,7 @@ import { apiRoutes, serverEventThreadId, type PendingRequest, type ServerEvent, 
 import { type AppConfig } from "@cwb/config";
 import { Storage, type HostRecord, type SessionRecord, type ThreadRecord } from "@cwb/storage";
 import { sameToken, token, verifyPassword } from "./auth.js";
+import { HostKeyError, internalHostKeyToken, verifyHostKey } from "./host-key.js";
 import { HostRuntimeManager, type RuntimeEvent, type RuntimeManager } from "./runtime-manager.js";
 
 declare module "fastify" { interface FastifyRequest { loginSession?: SessionRecord } }
@@ -18,6 +19,7 @@ export interface ServerOptions {
   runtime?: RuntimeManager;
   webRoot?: string | false;
   eventSink?: (event: ServerEvent) => void;
+  hostKeyVerifier?: typeof verifyHostKey;
 }
 
 interface EmbeddedWebAsset {
@@ -57,6 +59,7 @@ function detail(storage: Storage, thread: ThreadRecord): ThreadDetail { return {
 export async function buildServer(config: AppConfig, storage: Storage, options: ServerOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: true, trustProxy: false });
   const runtime = options.runtime ?? new HostRuntimeManager();
+  const hostKeyVerifier = options.hostKeyVerifier ?? verifyHostKey;
   const takeover=new Map<string,{owner:string;expiresAt?:number}>();
   function activeLease(threadId:string){const lease=takeover.get(threadId);if(lease?.expiresAt!==undefined&&lease.expiresAt<=Date.now()){takeover.delete(threadId);return;}return lease;}
   await app.register(cookie);
@@ -88,7 +91,51 @@ export async function buildServer(config: AppConfig, storage: Storage, options: 
   app.get(apiRoutes.session, async request => ({ authenticated: true, csrfToken: request.loginSession!.csrfToken }));
   app.post(apiRoutes.logout, async (request, reply) => { const sessionId=request.loginSession!.id;storage.deleteSession(sessionId);releaseLeases(sessionId);for(const [socket,state] of sockets)if(state.sessionId===sessionId)socket.close(1000,"logged out");reply.clearCookie("cwb_session", { path: "/", secure: config.publicOrigin.startsWith("https://"), sameSite: "strict" }); return reply.code(204).send(); });
   app.get(apiRoutes.hosts, async () => storage.hosts().map(h => ({ id: h.id, name: h.name, address: `${h.username}@${h.hostname}:${h.port}`, status: runtime.hostStatus?.(h.id)??"offline", hostname:h.hostname,port:h.port,username:h.username,hostKeySha256:h.hostKeySha256,identityFile:h.identityFile })));
-  app.post<{ Body: Omit<HostRecord,"createdAt"> & {password?:string;clearPassword?:boolean} }>(apiRoutes.hosts, async (request, reply) => { const value=request.body;if(!validId(value.id)||typeof value.name!=="string"||!value.name.trim()||value.name.length>128||typeof value.hostname!=="string"||!value.hostname.trim()||value.hostname.length>253||!Number.isInteger(value.port)||value.port<1||value.port>65535||typeof value.username!=="string"||!value.username.trim()||value.username.length>128||(value.identityFile!==undefined&&value.identityFile!==""&&!isAbsolute(value.identityFile))||typeof value.hostKeySha256!=="string"||!/^SHA256:[A-Za-z0-9+/]{43}=?$/.test(value.hostKeySha256)||(value.password!==undefined&&typeof value.password!=="string")||(value.clearPassword!==undefined&&typeof value.clearPassword!=="boolean")||(value.password!==undefined&&value.clearPassword))return reply.code(400).send({error:"invalid host configuration"});const previous=storage.host(value.id);const {password,clearPassword,...persisted}=value;const host = { ...persisted,identityFile:persisted.identityFile??"",name:value.name.trim(),hostname:value.hostname.trim(),username:value.username.trim(),createdAt: Date.now() };if(password!==undefined)runtime.setHostPassword?.(host.id,password);else if(clearPassword||previous&&hostConnectionChanged(previous,host))runtime.setHostPassword?.(host.id,undefined);storage.upsertHost(host); return reply.code(201).send({ id: host.id }); });
+  app.post<{ Body: Partial<Omit<HostRecord,"createdAt">> & {password?:string;clearPassword?:boolean;acceptHostKey?:boolean} }>(apiRoutes.hosts, async (request, reply) => {
+    const value = request.body ?? {};
+    if ((value.id !== undefined && typeof value.id !== "string") || (value.name !== undefined && typeof value.name !== "string")
+      || typeof value.hostname !== "string" || !value.hostname.trim() || value.hostname.length > 253
+      || !Number.isInteger(value.port) || value.port! < 1 || value.port! > 65535 || typeof value.username !== "string" || !value.username.trim()
+      || value.username.length > 128 || (value.identityFile !== undefined && value.identityFile !== "" && !isAbsolute(value.identityFile))
+      || (value.hostKeySha256 !== undefined && !/^SHA256:[A-Za-z0-9+/]{43}=?$/.test(value.hostKeySha256))
+      || (value.password !== undefined && typeof value.password !== "string") || (value.clearPassword !== undefined && typeof value.clearPassword !== "boolean")
+      || (value.acceptHostKey !== undefined && typeof value.acceptHostKey !== "boolean") || (value.password !== undefined && value.clearPassword)
+      || (value.acceptHostKey && value.hostKeySha256 === undefined)) {
+      return reply.code(400).send({ error: "invalid host configuration" });
+    }
+    const id = value.id?.trim() || randomUUID();
+    const name = value.name?.trim() || `${value.username.trim()}@${value.hostname.trim()}`;
+    if (!validId(id) || name.length > 128) return reply.code(400).send({ error: "invalid host configuration" });
+    let verified: { fingerprint: string };
+    try {
+      verified = request.headers["x-cwb-internal-host-key"] === internalHostKeyToken
+        ? { fingerprint: value.hostKeySha256! }
+        : await hostKeyVerifier(value as Record<string, unknown>, Boolean(value.acceptHostKey), true);
+    } catch (error) {
+      if (error instanceof HostKeyError) {
+        return reply.code(error.code === "SSH_HOST_KEY_SCAN_FAILED" ? 502 : 409)
+          .send({ error: error.message, code: error.code, ...(error.details === undefined ? {} : { details: error.details }) });
+      }
+      throw error;
+    }
+    const previous = storage.host(id);
+    const { password, clearPassword, acceptHostKey: _acceptHostKey, ...persisted } = value;
+    const host: HostRecord = {
+      ...persisted,
+      id,
+      name,
+      hostname: value.hostname.trim(),
+      port: value.port!,
+      username: value.username.trim(),
+      hostKeySha256: verified.fingerprint,
+      identityFile: persisted.identityFile ?? "",
+      createdAt: Date.now(),
+    };
+    if (password !== undefined) runtime.setHostPassword?.(host.id, password);
+    else if (clearPassword || previous && hostConnectionChanged(previous, host)) runtime.setHostPassword?.(host.id, undefined);
+    storage.upsertHost(host);
+    return reply.code(201).send({ id: host.id });
+  });
   app.get(apiRoutes.threads, async () => storage.threads().map(summary));
   app.get<{ Params:{ id:string } }>(`${apiRoutes.threads}/:id`, async (request, reply) => { const thread=storage.thread(request.params.id);if(!thread)return reply.code(404).send({error:"not found"});const result=detail(storage,thread),lease=activeLease(thread.id),owner=lease?.owner;result.terminal={...result.terminal,takeover:Boolean(owner),owner:owner===request.loginSession!.id?"you":owner?"another session":undefined};return result; });
   app.post<{ Body:{hostId:string;cwd:string} }>(apiRoutes.threads, async (request, reply) => { if(Object.hasOwn(request.body as object,"title"))return reply.code(400).send({error:"thread title is generated by the server"});const host=storage.host(request.body.hostId); if(!host)return reply.code(404).send({error:"host not found"});if(!isAbsolute(request.body.cwd))return reply.code(400).send({error:"cwd must be an absolute path"}); const now=Date.now(),id=randomUUID(); const thread:ThreadRecord={id,hostId:host.id,tmuxSession:`cwb-${id.replaceAll("-","").slice(0,20)}`,remotePort:allocatePort(storage,host.id),workingDirectory:request.body.cwd,title:`Codex thread ${id.slice(0,8)}`,status:"connecting",createdAt:now,updatedAt:now}; storage.createThread(thread); try { const codexThreadId=await runtime.create(host,thread); storage.updateThread(id,{codexThreadId,status:"idle",updatedAt:Date.now()});publish({type:"thread.updated",thread:summary(storage.thread(id)!)}); return reply.code(201).send(detail(storage,storage.thread(id)!)); } catch(error){storage.updateThread(id,{status:"error",updatedAt:Date.now()});publish({type:"thread.updated",thread:summary(storage.thread(id)!)});throw error;} });

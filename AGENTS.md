@@ -19,3 +19,6 @@
 - Never silently ignore an explicit CLI option because persisted configuration
   already exists. Apply it when supported or return a usage error before making
   lifecycle changes such as stopping a running daemon.
+- Keep SSH host-key verification shared across CLI and Web entry points. A Web
+  confirmation challenge must not persist the host or place its password in daemon
+  memory; mutate either only after the confirmed fingerprint has been accepted.
