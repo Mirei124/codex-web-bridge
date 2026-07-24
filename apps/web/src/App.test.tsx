@@ -358,6 +358,42 @@ describe("dashboard security and operations", () => {
     expect(screen.getByText("/repo · idle")).toBeInTheDocument();
   });
 
+  it("highlights an unread background thread and sends a loopback notification when it completes", async () => {
+    class NotificationStub {
+      static permission: NotificationPermission = "granted";
+      static instances: NotificationStub[] = [];
+      onclick: (() => void) | null = null;
+      constructor(readonly title: string, readonly options?: NotificationOptions) { NotificationStub.instances.push(this); }
+      close() {}
+      static requestPermission() { return Promise.resolve(NotificationStub.permission); }
+    }
+    vi.stubGlobal("Notification", NotificationStub); vi.stubGlobal("isSecureContext", true);
+    vi.stubGlobal("location", { protocol: "http:", hostname: "localhost", host: "localhost:3210" });
+    const baseFetch = authenticatedFetch();
+    const other = { id: "other", hostId: "a", title: "Background", cwd: "/other", status: "running" as const, updatedAt: "2026-01-01" };
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const path = typeof input === "string" ? input : input.toString();
+      if (path === "/api/threads" && !init?.method) return Promise.resolve(response([{ id: "t", hostId: "a", title: "Bridge", cwd: "/repo", status: "idle", updatedAt: "2026-01-01" }, other]));
+      if (path === "/api/threads/other") return Promise.resolve(response({ ...thread, ...other, messages: [], pendingRequests: [] }));
+      return baseFetch(input, init);
+    });
+    vi.stubGlobal("fetch", fetch); render(<App />);
+    await waitFor(() => expect(WebSocketStub.instances.at(-1)?.sent).toContain(JSON.stringify({ type: "subscribe", threadId: "other" })));
+    const socket = WebSocketStub.instances.at(-1)!;
+    socket.emit({ type: "snapshot", thread: { ...thread, ...other, messages: [], pendingRequests: [] } });
+    socket.emit({ type: "thread.updated", thread: { ...other, status: "idle", updatedAt: "2026-01-02" } });
+    await waitFor(() => expect(screen.getByText("Background").closest(".thread-row")).toHaveClass("unread"));
+    expect(document.title).toBe("(1) Codex Bridge");
+    expect(NotificationStub.instances[0]).toMatchObject({ title: "Codex 已完成回答", options: { body: "Background" } });
+    fireEvent.click(screen.getByText("Background").closest("button")!);
+    await waitFor(() => expect(document.title).toBe("Codex Bridge"));
+  });
+
+  it("shows a toast after refresh when system notifications are unavailable", async () => {
+    vi.stubGlobal("fetch", authenticatedFetch()); render(<App />);
+    expect(await screen.findByText("当前浏览器不支持系统通知，将使用未读高亮和标签提醒。")).toBeInTheDocument();
+  });
+
   it("renders the first snapshot and writes terminal ANSI seed without base64 transformation", async () => {
     await openThread(); const socket = WebSocketStub.instances.at(-1)!;
     socket.emit({ type: "snapshot", thread: { ...thread, title: "Recovered snapshot", messages: [{ id: "snapshot-message", role: "assistant", text: "Recovered answer", createdAt: "2026-01-01" }] } });

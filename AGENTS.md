@@ -80,3 +80,6 @@
 - A Codex `thread/start` ID has no resumable rollout until its first accepted turn.
   Persist rollout availability and do not launch the terminal viewer with
   `codex resume` for a fresh empty thread.
+- Subscribe the dashboard event socket to every listed thread when implementing
+  cross-thread completion alerts; a selected-thread-only subscription cannot
+  reliably drive unread state or background notifications.

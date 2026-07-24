@@ -1,8 +1,20 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { CodexThreadSummary, HostConfig, HostSummary, PendingRequest, ResolveRequest, ServerEvent, ThreadDetail, ThreadSummary, UpdateSettingsRequest } from "@cwb/protocol";
 import { ApiError, api } from "./api";
 import { Terminal } from "./Terminal";
 import { useThreadEvents } from "./useThreadEvents";
+
+const baseTitle = "Codex Bridge";
+function loopbackNotificationContext(): boolean {
+  const host = location.hostname.toLowerCase();
+  return window.isSecureContext && (host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host));
+}
+function notificationProblem(): string | undefined {
+  if (!("Notification" in window)) return "当前浏览器不支持系统通知，将使用未读高亮和标签提醒。";
+  if (!loopbackNotificationContext()) return "系统通知仅在本机回环地址可用，将使用未读高亮和标签提醒。";
+  if (Notification.permission === "denied") return "系统通知权限已被禁用，请在浏览器站点设置中重新允许。";
+  if (Notification.permission === "default") return "允许系统通知后，Codex 回答完成时可以在后台提醒你。";
+}
 
 function Login({ onLogin }: { onLogin(): void }) {
   const [password, setPassword] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
@@ -103,22 +115,76 @@ export default function App() {
   const [authenticated, setAuthenticated] = useState<boolean>(); const [hosts, setHosts] = useState<HostSummary[]>([]); const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [selected, setSelected] = useState<ThreadDetail>(); const [dialog, setDialog] = useState<"create" | "resume">(); const [draft, setDraft] = useState(""); const [tab, setTab] = useState<"chat" | "terminal">("chat"); const [terminalData, setTerminalData] = useState<string[]>([]); const [screenshot, setScreenshot] = useState<string>();
   const [hostDialog, setHostDialog] = useState<HostSummary | "new">(); const [navigationOpen, setNavigationOpen] = useState(false); const [exiting, setExiting] = useState(false); const [resuming, setResuming] = useState(false); const [operationError, setOperationError] = useState(""); const [view, setView] = useState<"threads" | "settings">("threads");
+  const [unread, setUnread] = useState<Set<string>>(() => new Set()); const [toast, setToast] = useState<string>(); const selectedId = useRef<string | undefined>(undefined); const viewRef = useRef(view); const threadStates = useRef(new Map<string, ThreadSummary["status"]>());
+  selectedId.current = selected?.id; viewRef.current = view;
   const load = useCallback(async () => { const [nextHosts, nextThreads] = await Promise.all([api.hosts(), api.threads()]); setHosts(nextHosts); setThreads(nextThreads); }, []);
   useEffect(() => { api.session().then(s => { setAuthenticated(s.authenticated); if (s.authenticated) void load(); }).catch(() => setAuthenticated(false)); }, [load]);
+  useEffect(() => { if (authenticated) setToast(notificationProblem()); }, [authenticated]);
+  useEffect(() => {
+    const count = unread.size;
+    document.title = count ? `(${count}) ${baseTitle}` : baseTitle;
+    let icon = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
+    if (!icon) { icon = document.createElement("link"); icon.rel = "icon"; document.head.append(icon); }
+    const badge = count ? `<circle cx="25" cy="7" r="7" fill="#e85d5d"/><text x="25" y="10" text-anchor="middle" font-size="9" font-family="sans-serif" fill="white">${Math.min(count, 9)}${count > 9 ? "+" : ""}</text>` : "";
+    icon.href = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="#64bfa7" d="M27 4C15 4 6 9 5 20c4-5 9-8 15-9-7 3-12 8-15 15l3 2c2-5 5-8 9-10 7-3 10-8 10-14Z"/>${badge}</svg>`)}`;
+    return () => { document.title = baseTitle; };
+  }, [unread]);
+  useEffect(() => {
+    const readVisibleThread = () => {
+      const id = selectedId.current;
+      if (document.visibilityState !== "visible" || viewRef.current !== "threads" || !id) return;
+      setUnread(old => { if (!old.has(id)) return old; const next = new Set(old); next.delete(id); return next; });
+    };
+    document.addEventListener("visibilitychange", readVisibleThread);
+    return () => document.removeEventListener("visibilitychange", readVisibleThread);
+  }, []);
+  async function enableNotifications() {
+    if (!("Notification" in window) || !loopbackNotificationContext()) return;
+    const permission = await Notification.requestPermission();
+    setToast(permission === "granted" ? undefined : notificationProblem());
+  }
+  useEffect(() => {
+    const rows = document.querySelectorAll<HTMLElement>(".thread-row");
+    rows.forEach((row, index) => row.classList.toggle("unread", Boolean(threads[index] && unread.has(threads[index]!.id))));
+  }, [threads, unread]);
+  useEffect(() => {
+    document.querySelector(".toast")?.remove();
+    if (!toast) return;
+    const element = document.createElement("div"); element.className = "toast"; element.setAttribute("role", "status");
+    const message = document.createElement("span"); message.textContent = toast; element.append(message);
+    if ("Notification" in window && loopbackNotificationContext() && Notification.permission === "default") {
+      const enable = document.createElement("button"); enable.textContent = "启用通知"; enable.onclick = () => void enableNotifications(); element.append(enable);
+    }
+    const close = document.createElement("button"); close.className = "toast-close"; close.setAttribute("aria-label", "关闭提醒"); close.textContent = "×"; close.onclick = () => setToast(undefined); element.append(close);
+    document.body.append(element);
+    return () => element.remove();
+  }, [toast]);
   const handleEvent = useCallback((event: ServerEvent) => {
-    if (event.type === "snapshot") setSelected(event.thread);
-    if (event.type === "thread.updated") { setThreads(old => old.map(t => t.id === event.thread.id ? event.thread : t)); setSelected(old => old?.id === event.thread.id ? { ...old, ...event.thread } : old); }
+    if (event.type === "snapshot") { threadStates.current.set(event.thread.id, event.thread.status); if (event.thread.id === selectedId.current) setSelected(event.thread); }
+    if (event.type === "thread.updated") {
+      const previous = threadStates.current.get(event.thread.id); threadStates.current.set(event.thread.id, event.thread.status);
+      setThreads(old => old.map(t => t.id === event.thread.id ? event.thread : t)); setSelected(old => old?.id === event.thread.id ? { ...old, ...event.thread } : old);
+      const completed = (previous === "running" || previous === "waiting") && (event.thread.status === "idle" || event.thread.status === "error");
+      const currentlyReading = selectedId.current === event.thread.id && viewRef.current === "threads" && document.visibilityState === "visible";
+      if (completed && !currentlyReading) {
+        setUnread(old => new Set(old).add(event.thread.id));
+        if ("Notification" in window && loopbackNotificationContext() && Notification.permission === "granted") {
+          const notice = new Notification(event.thread.status === "error" ? "Codex 会话执行失败" : "Codex 已完成回答", { body: event.thread.title, tag: `cwb-${event.thread.id}` });
+          notice.onclick = () => { window.focus(); void api.thread(event.thread.id).then(value => { setSelected(value); setView("threads"); setUnread(old => { const next = new Set(old); next.delete(event.thread.id); return next; }); }); notice.close(); };
+        }
+      }
+    }
     if (event.type === "thread.deleted") { setThreads(old => old.filter(t => t.id !== event.threadId)); setSelected(old => old?.id === event.threadId ? undefined : old); }
     if (event.type === "message.created") setSelected(old => old?.id === event.threadId ? { ...old, messages: [...old.messages, event.message] } : old);
     if (event.type === "message.delta") setSelected(old => old?.id === event.threadId ? { ...old, messages: old.messages.map(m => m.id === event.messageId ? { ...m, text: m.text + event.delta, streaming: true } : m) } : old);
     if (event.type === "message.completed") setSelected(old => old?.id === event.threadId ? { ...old, messages: old.messages.map(m => m.id === event.messageId ? { ...m, streaming: false } : m) } : old);
     if (event.type === "request.created") setSelected(old => old?.id === event.threadId ? { ...old, pendingRequests: [...old.pendingRequests, event.request] } : old);
     if (event.type === "request.resolved") setSelected(old => old?.id === event.threadId ? { ...old, pendingRequests: old.pendingRequests.filter(r => r.requestId !== event.requestId) } : old);
-    if (event.type === "terminal.data" && event.threadId === selected?.id) setTerminalData(old => [...old, event.data]);
+    if (event.type === "terminal.data" && event.threadId === selectedId.current) setTerminalData(old => [...old, event.data]);
     if (event.type === "terminal.state") setSelected(old => old?.id === event.threadId ? { ...old, terminal: { connected: event.connected, takeover: event.takeover, owner: event.owner } } : old);
-  }, [selected?.id]);
-  useThreadEvents(selected?.id, handleEvent);
-  async function selectThread(thread: ThreadSummary) { setTerminalData([]); setScreenshot(undefined); setOperationError(""); setSelected(await api.thread(thread.id)); setNavigationOpen(false); }
+  }, []);
+  useThreadEvents(threads.map(thread => thread.id), handleEvent);
+  async function selectThread(thread: ThreadSummary) { setUnread(old => { const next = new Set(old); next.delete(thread.id); return next; }); setTerminalData([]); setScreenshot(undefined); setOperationError(""); setSelected(await api.thread(thread.id)); setNavigationOpen(false); }
   async function send(event: FormEvent) { event.preventDefault(); if (!selected || !draft.trim()) return; const text = draft.trim(); setDraft(""); await api.sendMessage(selected.id, { text }); }
   async function resolve(request: PendingRequest, value: ResolveRequest) { if (selected) await api.resolve(selected.id, request.requestId, value); }
   async function exitSelected() { if (!selected || exiting || !confirm("退出运行中的会话？历史记录不会被删除。")) return; setExiting(true); setOperationError(""); try { await api.exitThread(selected.id); setSelected(old => old?.id === selected.id ? { ...old, status: "exited", terminal: { ...old.terminal, connected: false, takeover: false } } : old); void load().catch(() => undefined); } catch (error) { setOperationError(error instanceof Error ? error.message : "退出会话失败"); } finally { setExiting(false); } }
