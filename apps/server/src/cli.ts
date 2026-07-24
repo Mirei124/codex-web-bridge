@@ -58,6 +58,24 @@ function option(args: string[], name: string): string | undefined {
   return index >= 0 ? args[index + 1] : undefined;
 }
 
+function validateDashboardPassword(password: string): string {
+  if (password.length < 12) throw new UsageError("dashboard password must contain at least 12 characters");
+  return password;
+}
+
+async function validateExplicitStartPassword(args: string[]): Promise<void> {
+  const password = option(args, "--password");
+  if (password === undefined) return;
+  validateDashboardPassword(password);
+  try {
+    await loadConfig();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  throw new UsageError("configuration already exists; use 'codex-web-bridge password set NEW_PASSWORD'");
+}
+
 async function pid(): Promise<number | undefined> {
   try {
     const value = JSON.parse(await readFile(paths().pid, "utf8")) as { pid?: number; marker?: string };
@@ -121,7 +139,7 @@ async function configure(args: string[]): Promise<{
   const port = Number(portText);
   const suppliedPassword = option(args, "--password") ?? process.env.CWB_PASSWORD;
   const generatedPassword = suppliedPassword ? undefined : randomBytes(24).toString("base64url");
-  const password = suppliedPassword ?? generatedPassword!;
+  const password = validateDashboardPassword(suppliedPassword ?? generatedPassword!);
   const publicOrigin = option(args, "--origin") ?? process.env.CWB_PUBLIC_ORIGIN ?? `http://127.0.0.1:${port}`;
   const acceptRisk = args.includes("--accept-risk");
   const createdConfig: AppConfig = {
@@ -241,13 +259,13 @@ async function stop(json: boolean, emit = true): Promise<{ state: "not_running" 
   return result;
 }
 
-async function resetPassword(json: boolean): Promise<void> {
+async function changePassword(password: string, json: boolean, generatedPassword?: string): Promise<void> {
   const config = await loadConfig();
-  const generatedPassword = randomBytes(24).toString("base64url");
+  const passwordHash = await hashPassword(validateDashboardPassword(password));
   const current = await pid();
   const running = Boolean(current && await alive(current));
   if (running) await stop(json, false);
-  await saveConfig({ ...config, passwordHash: await hashPassword(generatedPassword) });
+  await saveConfig({ ...config, passwordHash });
   if (running) {
     try {
       await start([], json, false, false);
@@ -257,7 +275,12 @@ async function resetPassword(json: boolean): Promise<void> {
       throw error;
     }
   }
-  success({ generatedPassword, daemonRestarted: running }, json, "result", "password.reset");
+  success({ ...(generatedPassword ? { generatedPassword } : {}), daemonRestarted: running }, json, "result", generatedPassword ? "password.reset" : "password.set");
+}
+
+async function resetPassword(json: boolean): Promise<void> {
+  const generatedPassword = randomBytes(24).toString("base64url");
+  await changePassword(generatedPassword, json, generatedPassword);
 }
 
 async function readInputFile(path: string): Promise<string> {
@@ -378,16 +401,24 @@ async function main(): Promise<void> {
     else args = [nested ?? "help", ...args.slice(2)];
   }
   if (args[0] === "password") {
-    if (args[1] !== "reset" || args.slice(2).some(value => value !== "--json") || args.filter(value => value === "--json").length > 1) {
-      throw new UsageError("Usage: codex-web-bridge password reset [--json]");
+    const action = args[1];
+    const json = args.includes("--json");
+    if (args.filter(value => value === "--json").length > 1) throw new UsageError("option --json was provided more than once");
+    if (action === "reset" && args.slice(2).every(value => value === "--json")) {
+      await resetPassword(json);
+      return;
     }
-    await resetPassword(args.includes("--json"));
-    return;
+    if (action === "set" && args.length === (json ? 4 : 3) && (!json || args[3] === "--json")) {
+      await changePassword(args[2]!, json);
+      return;
+    }
+    throw new UsageError("Usage: codex-web-bridge password reset [--json]\n       codex-web-bridge password set NEW_PASSWORD [--json]");
   }
   const command = (args[0] ?? "help") as DaemonCommand;
   if (["start", "stop", "restart", "status", "dashboard", "help"].includes(command)) {
     const commandArgs = args.slice(1);
     const { json, foreground } = validateDaemonOptions(command, commandArgs);
+    if (command === "start" || command === "restart") await validateExplicitStartPassword(commandArgs);
     if (command === "help") { success({ usage: helpText() }, json, "result", "help"); return; }
     if (command === "start") { await start(commandArgs, json, foreground); return; }
     if (command === "stop") { await stop(json); return; }

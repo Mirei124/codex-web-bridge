@@ -130,6 +130,12 @@ function daemonResult(method: string | undefined, data: Row): string | undefined
       `Daemon restarted: ${scalar(data.daemonRestarted)}`,
     ].join("\n");
   }
+  if (method === "password.set") {
+    return [
+      "Dashboard password updated.",
+      `Daemon restarted: ${scalar(data.daemonRestarted)}`,
+    ].join("\n");
+  }
 }
 
 export function renderHuman(data: unknown, context: RenderContext = {}): string {

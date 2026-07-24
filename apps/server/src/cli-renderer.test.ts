@@ -20,6 +20,8 @@ describe("CLI human renderer", () => {
       { method: "start" },
     )).toBe("Daemon started (PID 42).\nDashboard password: secret");
     expect(renderHuman({ state: "not_running" }, { method: "status" })).toBe("Daemon is not running.");
+    expect(renderHuman({ daemonRestarted: true }, { method: "password.set" }))
+      .toBe("Dashboard password updated.\nDaemon restarted: true");
   });
 
   it("renders detail objects as readable key/value lines", () => {

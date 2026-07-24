@@ -61,6 +61,17 @@ The original generated password cannot be recovered because only its hash is sto
 pnpm cwb password reset
 ```
 
+To choose the replacement explicitly, use a password of at least 12 characters. The
+daemon restarts automatically when it is running:
+
+```bash
+pnpm cwb password set 'new-dashboard-password'
+```
+
+The explicit value is part of the process arguments and may be retained by shell
+history. Existing configuration is never changed by `start --password`; that form is
+accepted only on first start and otherwise exits with a usage error.
+
 If the daemon is stopped and you want the new password returned as part of the normal start result, use:
 
 ```bash

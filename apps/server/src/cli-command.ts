@@ -15,6 +15,7 @@ const usage = `Usage:
   codex-web-bridge start [--password VALUE|--reset-password] [--origin URL --port PORT] [--accept-risk] [--foreground]
   codex-web-bridge stop|restart|status|dashboard
   codex-web-bridge password reset
+  codex-web-bridge password set NEW_PASSWORD
   codex-web-bridge daemon <start|stop|restart|status|url> [same daemon options]
 
   codex-web-bridge host list
@@ -51,6 +52,7 @@ const commandHelp: Record<string, string> = {
 
 Start the daemon. The first start generates a dashboard password unless --password is supplied.
 Use --reset-password to replace an existing password while starting.
+When configuration already exists, use password set instead of --password.
 The daemon listens on 127.0.0.1 by default; --accept-risk binds to 0.0.0.0 over HTTP.`,
   stop: "Usage: codex-web-bridge stop [--json]\n\nStop the daemon without destroying remote tmux or Codex history.",
   restart: `Usage: codex-web-bridge restart [--password VALUE|--reset-password] [--origin URL] [--port PORT] [--accept-risk] [--foreground] [--json]
@@ -58,8 +60,9 @@ The daemon listens on 127.0.0.1 by default; --accept-risk binds to 0.0.0.0 over 
 Restart the daemon. Remote tmux sessions remain running.`,
   status: "Usage: codex-web-bridge status [--json]\n\nShow whether the daemon is running and its PID.",
   dashboard: "Usage: codex-web-bridge dashboard [--json]\n\nPrint the configured dashboard URL.",
-  password: "Usage: codex-web-bridge password reset [--json]\n\nGenerate a new dashboard password and restart a running daemon.",
+  password: "Usage:\n  codex-web-bridge password reset [--json]\n  codex-web-bridge password set NEW_PASSWORD [--json]\n\nReplace the dashboard password and restart a running daemon.",
   "password reset": "Usage: codex-web-bridge password reset [--json]\n\nGenerate and print a new dashboard password. A running daemon is restarted automatically.",
+  "password set": "Usage: codex-web-bridge password set NEW_PASSWORD [--json]\n\nSet a dashboard password of at least 12 characters. A running daemon is restarted automatically.",
   host: `Usage:
   codex-web-bridge host list
   codex-web-bridge host get HOST_ID

@@ -94,6 +94,29 @@ describe("built CLI and daemon", () => {
     });
     expect(resetLogin.status).toBe(200);
 
+    const beforeSetPid = (JSON.parse(await readFile(join(dataDir, "daemon.pid"), "utf8")) as { pid: number }).pid;
+    const setOutput = output(run(["password", "set", "new-dashboard-password"], env));
+    expect(setOutput.data).toEqual({ daemonRestarted: true });
+    const afterSetPid = (JSON.parse(await readFile(join(dataDir, "daemon.pid"), "utf8")) as { pid: number }).pid;
+    expect(afterSetPid).not.toBe(beforeSetPid);
+    const setLogin = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+      method: "POST",
+      headers: { ...headers, connection: "close", "content-type": "application/json" },
+      body: JSON.stringify({ password: "new-dashboard-password" }),
+    });
+    expect(setLogin.status).toBe(200);
+    const staleLogin = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+      method: "POST",
+      headers: { ...headers, connection: "close", "content-type": "application/json" },
+      body: JSON.stringify({ password: resetOutput.data.generatedPassword }),
+    });
+    expect(staleLogin.status).toBe(401);
+
+    const rejectedPassword = run(["restart", "--password", "another-dashboard-password"], env);
+    expect(rejectedPassword.status).toBe(2);
+    expect(JSON.parse(rejectedPassword.stderr)).toMatchObject({ error: { code: "usage_error" } });
+    expect(output(run(["status"], env))).toMatchObject({ data: { state: "running", pid: afterSetPid } });
+
     const restarted = run(["restart"], env);
     expect(output(restarted).data).not.toHaveProperty("generatedPassword");
     const restartedPid = (JSON.parse(await readFile(join(dataDir, "daemon.pid"), "utf8")) as { pid: number }).pid;
@@ -118,6 +141,17 @@ describe("built CLI and daemon", () => {
       ok: false,
       error: { code: "daemon_unavailable", retryable: true },
     });
+  });
+
+  it("rejects a short first-run password without creating configuration", async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "cwb-cli-test-"));
+    const env = { ...process.env, CWB_DATA_DIR: dataDir };
+    const result = run(["start", "--password", "moon"], env);
+    expect(result.status).toBe(2);
+    expect(JSON.parse(result.stderr)).toMatchObject({
+      error: { code: "usage_error", message: "dashboard password must contain at least 12 characters" },
+    });
+    await expect(readFile(join(dataDir, "config.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("rolls back a newly generated password config when daemon startup fails", async () => {

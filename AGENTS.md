@@ -16,3 +16,6 @@
 - Keep explicit lifecycle operations strict: if a user asks to stop or destroy a
   remote resource, propagate failure and update persisted state only after success.
   Reserve best-effort error suppression for rollback and shutdown cleanup paths.
+- Never silently ignore an explicit CLI option because persisted configuration
+  already exists. Apply it when supported or return a usage error before making
+  lifecycle changes such as stopping a running daemon.
