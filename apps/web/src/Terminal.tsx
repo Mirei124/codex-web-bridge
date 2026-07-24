@@ -14,7 +14,7 @@ export function Terminal({ data, writable, onInput }: Props) {
     const xterm = new XTerm({ cursorBlink: writable, disableStdin: !writable, fontSize: 13, theme: { background: "#101411" } });
     const fit = new FitAddon();
     xterm.loadAddon(fit); xterm.open(element.current); fit.fit();
-    const subscription = xterm.onData(onInput);
+    const subscription = xterm.onData(data => onInput(data === "\x7f" ? "\x08" : data));
     terminal.current = xterm;
     return () => { subscription.dispose(); xterm.dispose(); terminal.current = null; written.current = 0; };
   }, [onInput]);

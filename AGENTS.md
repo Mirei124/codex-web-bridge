@@ -65,3 +65,8 @@
 - Persist Web create-thread form defaults on the server, not in browser-local
   storage. Load them only for the create flow, keep resume discovery independent,
   and fall back to an available host if the remembered host was removed.
+- Normalize xterm's standalone DEL byte (`0x7f`) to terminal Backspace (`0x08`) at
+  the Web input boundary before forwarding it through tmux.
+- Start bridge-managed Codex app-server and viewer processes with the invocation
+  override `-c check_for_update_on_startup=false`; do not mutate the remote user's
+  global Codex configuration merely to suppress bridge terminal upgrade prompts.

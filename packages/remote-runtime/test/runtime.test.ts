@@ -47,6 +47,8 @@ describe("remote command safety", () => {
     await runtime.attachViewer(session, "/repo", "thread-1");
     expect(remote.calls.find(call => call[1][0] === "new-session")?.[1].at(-1)).toContain("'/resolved/codex'");
     expect(remote.calls.find(call => call[1][0] === "split-window")?.[1].at(-1)).toContain("'/resolved/codex'");
+    expect(remote.calls.find(call => call[1][0] === "new-session")?.[1].at(-1)).toContain("'check_for_update_on_startup=false'");
+    expect(remote.calls.find(call => call[1][0] === "split-window")?.[1].at(-1)).toContain("'check_for_update_on_startup=false'");
   });
   it("accepts resolved programs when an SSH server omits the exit status", async () => {
     const remote = new FakeRemote(); remote.commandLookupCode = null;

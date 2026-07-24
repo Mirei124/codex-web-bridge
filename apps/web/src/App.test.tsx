@@ -291,9 +291,11 @@ describe("dashboard security and operations", () => {
     fireEvent.click(screen.getByRole("button", { name: "显式接管" }));
     expect(fetch).toHaveBeenCalledWith("/api/threads/t/terminal/takeover", expect.objectContaining({ method: "POST" }));
     WebSocketStub.instances.at(-1)?.emit({ type: "terminal.state", threadId: "t", connected: true, takeover: true, owner: "browser" });
-    await screen.findByRole("button", { name: "结束接管" }); terminalInput?.("allowed");
-    await waitFor(() => expect(fetch.mock.calls.some(call => call[0] === "/api/threads/t/terminal/input")).toBe(true));
-    const inputCall = fetch.mock.calls.find(call => call[0] === "/api/threads/t/terminal/input")!;
+    await screen.findByRole("button", { name: "结束接管" }); terminalInput?.("\x7f"); terminalInput?.("allowed");
+    await waitFor(() => expect(fetch.mock.calls.filter(call => call[0] === "/api/threads/t/terminal/input")).toHaveLength(2));
+    const inputCalls = fetch.mock.calls.filter(call => call[0] === "/api/threads/t/terminal/input");
+    const inputCall = inputCalls[0]!;
+    expect(JSON.parse(String((inputCall[1] as RequestInit).body))).toEqual({data:"\x08"});
     expect(new Headers((inputCall[1] as RequestInit).headers).get("x-csrf-token")).toBe("csrf-token");
     WebSocketStub.instances.at(-1)?.emit({ type: "terminal.state", threadId: "t", connected: true, takeover: false });
     await screen.findByRole("button", { name: "显式接管" }); const previousInputs = fetch.mock.calls.filter(call => call[0] === "/api/threads/t/terminal/input").length;

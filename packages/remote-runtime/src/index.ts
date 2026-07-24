@@ -129,7 +129,7 @@ export class TmuxCodexRuntime {
       await this.must("rm", ["-f", fifoPath]);
     }
     await this.must("mkfifo", ["-m", "600", fifoPath]);
-    const appCommand = proxiedCommand(this.resolvedCodex ?? this.codex, ["app-server", "--listen", `ws://127.0.0.1:${remotePort}`], proxy);
+    const appCommand = proxiedCommand(this.resolvedCodex ?? this.codex, ["-c", "check_for_update_on_startup=false", "app-server", "--listen", `ws://127.0.0.1:${remotePort}`], proxy);
     const created = await this.must(this.resolvedTmux ?? this.tmux, ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", name, "-c", cwd, appCommand]);
     const appServerPane = created.stdout.trim();
     await this.must(this.resolvedTmux ?? this.tmux, ["set-option", "-p", "-t", appServerPane, "@cwb-role", "app-server"]);
@@ -147,7 +147,7 @@ export class TmuxCodexRuntime {
   }
   async attachViewer(session: RemoteSession, cwd: string, threadId: string, proxy?: string): Promise<RemoteSession> {
     if (session.viewerPane) return { ...session, threadId };
-    const viewerCommand = proxiedCommand(this.resolvedCodex ?? this.codex, ["--remote", `ws://127.0.0.1:${session.remotePort}`, "resume", threadId], proxy);
+    const viewerCommand = proxiedCommand(this.resolvedCodex ?? this.codex, ["-c", "check_for_update_on_startup=false", "--remote", `ws://127.0.0.1:${session.remotePort}`, "resume", threadId], proxy);
     const result = await this.must(this.resolvedTmux ?? this.tmux, ["split-window", "-d", "-t", session.name, "-c", cwd, "-P", "-F", "#{pane_id}", viewerCommand]);
     const pane = result.stdout.trim();
     await this.must(this.resolvedTmux ?? this.tmux, ["set-option", "-p", "-t", pane, "@cwb-role", "viewer"]);
