@@ -5,14 +5,15 @@ import { commandLine, shellQuote, TerminalSnapshotRenderer, TmuxCodexRuntime, wi
 class FakeRemote implements RemoteExecutor {
   calls: Array<[string, readonly string[]]> = [];
   sessionExists = false; probeReady = false;
+  commandLookupCode: number | null = 0;
   streams: any[] = [];
   async execute(program: string, args: readonly string[] = []): Promise<CommandResult> {
     this.calls.push([program, args]);
-    if (program === "command" && args[0] === "-v") return { stdout: `/resolved/${args[1]}\n`, stderr: "", code: 0 };
-    if (program === "tmux" && args[0] === "has-session") return { stdout: "", stderr: "", code: this.sessionExists ? 0 : 1 };
-    if (program === "tmux" && args[0] === "list-panes") return { stdout: "%1\tapp-server\t\n%2\tviewer\tthread-1\n", stderr: "", code: 0 };
-    if (program === "tmux" && args[0] === "new-session") return { stdout: "%1\n", stderr: "", code: 0 };
-    if (program === "tmux" && args[0] === "split-window") return { stdout: "%2\n", stderr: "", code: 0 };
+    if (program === "command" && args[0] === "-v") return { stdout: `/resolved/${args[1]}\n`, stderr: "", code: this.commandLookupCode };
+    if (program.endsWith("tmux") && args[0] === "has-session") return { stdout: "", stderr: "", code: this.sessionExists ? 0 : 1 };
+    if (program.endsWith("tmux") && args[0] === "list-panes") return { stdout: "%1\tapp-server\t\n%2\tviewer\tthread-1\n", stderr: "", code: 0 };
+    if (program.endsWith("tmux") && args[0] === "new-session") return { stdout: "%1\n", stderr: "", code: 0 };
+    if (program.endsWith("tmux") && args[0] === "split-window") return { stdout: "%2\n", stderr: "", code: 0 };
     if (program === "stat" || program === "id") return { stdout: "1000\n", stderr: "", code: 0 };
     if (program === "test" && args[0] === "-L") return { stdout: "", stderr: "", code: 1 };
     if (program === "test" && args[0] === "-e") return { stdout: "", stderr: "", code: 1 };
@@ -46,6 +47,13 @@ describe("remote command safety", () => {
     await runtime.attachViewer(session, "/repo", "thread-1");
     expect(remote.calls.find(call => call[1][0] === "new-session")?.[1].at(-1)).toContain("'/resolved/codex'");
     expect(remote.calls.find(call => call[1][0] === "split-window")?.[1].at(-1)).toContain("'/resolved/codex'");
+  });
+  it("accepts resolved programs when an SSH server omits the exit status", async () => {
+    const remote = new FakeRemote(); remote.commandLookupCode = null;
+    const runtime = new TmuxCodexRuntime(remote, { runtimeDirectory: "/safe/runtime" });
+    await runtime.checkPrerequisites();
+    await runtime.start("missing-status", "/repo", 43123);
+    expect(remote.calls.some(call => call[0] === "/resolved/tmux" && call[1][0] === "new-session")).toBe(true);
   });
   it("injects proxy variables into Codex commands with shell-safe quoting", async () => {
     const remote = new FakeRemote(); const runtime = new TmuxCodexRuntime(remote, { runtimeDirectory: "/safe/runtime" });

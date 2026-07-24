@@ -47,3 +47,7 @@
   response `message` over `error`. Fastify's `error` field may only contain a generic
   HTTP status such as "Internal Server Error", while `message` carries the actionable
   runtime failure.
+- Some SSH servers close an exec channel without sending `exit-status`. For discovery
+  commands such as `command -v`, accept a non-empty absolute result when the status is
+  `null`, then use that resolved absolute executable path for subsequent tmux/Codex
+  commands.

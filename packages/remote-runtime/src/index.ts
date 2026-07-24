@@ -85,6 +85,7 @@ export interface RemoteSession { name: string; appServerPane: string; viewerPane
 
 export class TmuxCodexRuntime {
   private readonly tmux: string; private readonly codex: string; private readonly configuredRuntimeDirectory?: string;
+  private resolvedTmux?: string;
   private resolvedCodex?: string;
   private resolvedRuntimeDirectory?: string;
   private readonly terminalReaders = new Map<string, CommandStream>();
@@ -94,12 +95,11 @@ export class TmuxCodexRuntime {
   async checkPrerequisites(): Promise<void> {
     for (const program of [this.tmux, this.codex]) {
       const result = await this.remote.execute("command", ["-v", program]);
-      if (result.code !== 0) throw new Error(`Remote program not found: ${program}`);
-      if (program === this.codex) {
-        const resolved = result.stdout.trim();
-        if (!resolved.startsWith("/")) throw new Error(`Remote program did not resolve to an absolute path: ${program}`);
-        this.resolvedCodex = resolved;
-      }
+      const resolved = result.stdout.trim();
+      if (result.code !== 0 && result.code !== null || !resolved) throw new Error(`Remote program not found: ${program}`);
+      if (!resolved.startsWith("/")) throw new Error(`Remote program did not resolve to an absolute path: ${program}`);
+      if (program === this.tmux) this.resolvedTmux = resolved;
+      if (program === this.codex) this.resolvedCodex = resolved;
     }
   }
   /** Start the persistent app-server pane. Attach the viewer after thread/start or thread/resume. */
@@ -118,9 +118,9 @@ export class TmuxCodexRuntime {
     }
     await this.must("mkfifo", ["-m", "600", fifoPath]);
     const appCommand = proxiedCommand(this.resolvedCodex ?? this.codex, ["app-server", "--listen", `ws://127.0.0.1:${remotePort}`], proxy);
-    const created = await this.must(this.tmux, ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", name, "-c", cwd, appCommand]);
+    const created = await this.must(this.resolvedTmux ?? this.tmux, ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", name, "-c", cwd, appCommand]);
     const appServerPane = created.stdout.trim();
-    await this.must(this.tmux, ["set-option", "-p", "-t", appServerPane, "@cwb-role", "app-server"]);
+    await this.must(this.resolvedTmux ?? this.tmux, ["set-option", "-p", "-t", appServerPane, "@cwb-role", "app-server"]);
     return { name, appServerPane, remotePort, fifoPath };
   }
   async waitUntilReady(session: RemoteSession, options: { timeoutMs?: number; intervalMs?: number } = {}): Promise<void> {
@@ -136,18 +136,18 @@ export class TmuxCodexRuntime {
   async attachViewer(session: RemoteSession, cwd: string, threadId: string, proxy?: string): Promise<RemoteSession> {
     if (session.viewerPane) return { ...session, threadId };
     const viewerCommand = proxiedCommand(this.resolvedCodex ?? this.codex, ["--remote", `ws://127.0.0.1:${session.remotePort}`, "resume", threadId], proxy);
-    const result = await this.must(this.tmux, ["split-window", "-d", "-t", session.name, "-c", cwd, "-P", "-F", "#{pane_id}", viewerCommand]);
+    const result = await this.must(this.resolvedTmux ?? this.tmux, ["split-window", "-d", "-t", session.name, "-c", cwd, "-P", "-F", "#{pane_id}", viewerCommand]);
     const pane = result.stdout.trim();
-    await this.must(this.tmux, ["set-option", "-p", "-t", pane, "@cwb-role", "viewer"]);
-    await this.must(this.tmux, ["set-option", "-p", "-t", pane, "@cwb-thread", threadId]);
+    await this.must(this.resolvedTmux ?? this.tmux, ["set-option", "-p", "-t", pane, "@cwb-role", "viewer"]);
+    await this.must(this.resolvedTmux ?? this.tmux, ["set-option", "-p", "-t", pane, "@cwb-thread", threadId]);
     // Reopen the FIFO after each reader disconnects, allowing browser/SSH stream reconnects.
     const pipeCommand = `while true; do cat > ${shellQuote(session.fifoPath)}; done`;
-    await this.must(this.tmux, ["pipe-pane", "-O", "-t", pane, commandLine("sh", ["-c", pipeCommand])]);
+    await this.must(this.resolvedTmux ?? this.tmux, ["pipe-pane", "-O", "-t", pane, commandLine("sh", ["-c", pipeCommand])]);
     return { ...session, viewerPane: pane, threadId };
   }
-  async exists(name: string): Promise<boolean> { validateName(name); return (await this.remote.execute(this.tmux, ["has-session", "-t", name])).code === 0; }
+  async exists(name: string): Promise<boolean> { validateName(name); return (await this.remote.execute(this.resolvedTmux ?? this.tmux, ["has-session", "-t", name])).code === 0; }
   async stop(name: string): Promise<void> {
-    validateName(name); const result = await this.remote.execute(this.tmux, ["kill-session", "-t", name]);
+    validateName(name); const result = await this.remote.execute(this.resolvedTmux ?? this.tmux, ["kill-session", "-t", name]);
     if (result.code !== 0 && !/can't find session|no server running/i.test(result.stderr)) throw commandError(result);
     this.terminalReaders.get(name)?.close(); this.terminalReaders.delete(name);
     const fifoPath = `${await this.runtimeDirectory()}/${name}.ansi`;
@@ -156,7 +156,7 @@ export class TmuxCodexRuntime {
   async capture(session: RemoteSession, historyLines = 0): Promise<string> {
     if (!session.viewerPane) throw new Error("Viewer pane has not been attached");
     const start = historyLines > 0 ? String(-historyLines) : "0";
-    return (await this.must(this.tmux, ["capture-pane", "-e", "-p", "-J", "-S", start, "-t", session.viewerPane])).stdout;
+    return (await this.must(this.resolvedTmux ?? this.tmux, ["capture-pane", "-e", "-p", "-J", "-S", start, "-t", session.viewerPane])).stdout;
   }
   async terminalStream(session: RemoteSession): Promise<CommandStream> {
     if (!session.viewerPane) throw new Error("Viewer pane has not been attached");
@@ -174,8 +174,8 @@ export class TmuxCodexRuntime {
   async sendKeys(session: RemoteSession, bytes: string): Promise<void> {
     if (!session.viewerPane) throw new Error("Viewer pane has not been attached");
     // tmux set-buffer/paste-buffer preserves arbitrary user text as one argument.
-    await this.must(this.tmux, ["set-buffer", "-b", "cwb-input", bytes]);
-    await this.must(this.tmux, ["paste-buffer", "-b", "cwb-input", "-d", "-t", session.viewerPane]);
+    await this.must(this.resolvedTmux ?? this.tmux, ["set-buffer", "-b", "cwb-input", bytes]);
+    await this.must(this.resolvedTmux ?? this.tmux, ["paste-buffer", "-b", "cwb-input", "-d", "-t", session.viewerPane]);
   }
   private async must(program: string, args: string[], ok = [0]): Promise<CommandResult> { const result = await this.remote.execute(program, args); if (!ok.includes(result.code ?? -1)) throw commandError(result); return result; }
   private async runtimeDirectory(): Promise<string> {
@@ -199,7 +199,7 @@ export class TmuxCodexRuntime {
   }
   private async findPanes(name: string): Promise<{ appServerPane: string; viewerPane?: string } | undefined> {
     if (!(await this.exists(name))) return;
-    const result = await this.must(this.tmux, ["list-panes", "-t", name, "-F", "#{pane_id}\t#{@cwb-role}\t#{@cwb-thread}"]);
+    const result = await this.must(this.resolvedTmux ?? this.tmux, ["list-panes", "-t", name, "-F", "#{pane_id}\t#{@cwb-role}\t#{@cwb-thread}"]);
     let appServerPane: string | undefined, viewerPane: string | undefined;
     for (const line of result.stdout.trim().split("\n")) {
       const [id, role] = line.split("\t");
