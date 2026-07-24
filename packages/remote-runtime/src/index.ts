@@ -82,7 +82,7 @@ export class TmuxCodexRuntime {
     for (const program of [this.tmux, this.codex]) { const result = await this.remote.execute("command", ["-v", program]); if (result.code !== 0) throw new Error(`Remote program not found: ${program}`); }
   }
   /** Start the persistent app-server pane. Attach the viewer after thread/start or thread/resume. */
-  async start(name: string, cwd: string, remotePort: number): Promise<RemoteSession> {
+  async start(name: string, cwd: string, remotePort: number, proxy?: string): Promise<RemoteSession> {
     validateName(name); validatePort(remotePort);
     const runtimeDirectory = await this.runtimeDirectory();
     const fifoPath = `${runtimeDirectory}/${name}.ansi`;
@@ -96,7 +96,7 @@ export class TmuxCodexRuntime {
       await this.must("rm", ["-f", fifoPath]);
     }
     await this.must("mkfifo", ["-m", "600", fifoPath]);
-    const appCommand = commandLine(this.codex, ["app-server", "--listen", `ws://127.0.0.1:${remotePort}`]);
+    const appCommand = proxiedCommand(this.codex, ["app-server", "--listen", `ws://127.0.0.1:${remotePort}`], proxy);
     const created = await this.must(this.tmux, ["new-session", "-d", "-P", "-F", "#{pane_id}", "-s", name, "-c", cwd, appCommand]);
     const appServerPane = created.stdout.trim();
     await this.must(this.tmux, ["set-option", "-p", "-t", appServerPane, "@cwb-role", "app-server"]);
@@ -112,9 +112,9 @@ export class TmuxCodexRuntime {
     } while (Date.now() < deadline);
     throw new Error(`Codex app-server did not listen on port ${session.remotePort} before timeout`);
   }
-  async attachViewer(session: RemoteSession, cwd: string, threadId: string): Promise<RemoteSession> {
+  async attachViewer(session: RemoteSession, cwd: string, threadId: string, proxy?: string): Promise<RemoteSession> {
     if (session.viewerPane) return { ...session, threadId };
-    const viewerCommand = commandLine(this.codex, ["--remote", `ws://127.0.0.1:${session.remotePort}`, "resume", threadId]);
+    const viewerCommand = proxiedCommand(this.codex, ["--remote", `ws://127.0.0.1:${session.remotePort}`, "resume", threadId], proxy);
     const result = await this.must(this.tmux, ["split-window", "-d", "-t", session.name, "-c", cwd, "-P", "-F", "#{pane_id}", viewerCommand]);
     const pane = result.stdout.trim();
     await this.must(this.tmux, ["set-option", "-p", "-t", pane, "@cwb-role", "viewer"]);
@@ -191,4 +191,9 @@ export class TmuxCodexRuntime {
 }
 function validateName(name: string): void { if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) throw new Error("Invalid tmux session name"); }
 function validatePort(port: number): void { if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid app-server port"); }
+function proxiedCommand(program: string, args: string[], proxy?: string): string {
+  if (!proxy) return commandLine(program, args);
+  const variables = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"].map(name => `${name}=${proxy}`);
+  return commandLine("env", [...variables, program, ...args]);
+}
 function commandError(result: CommandResult): Error { return new Error(`Remote command failed (${result.code}): ${result.stderr.trim()}`); }

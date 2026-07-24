@@ -181,6 +181,7 @@ export class ControlServer {
     if (method === "thread.get") return this.thread(state, idParam(params));
     if (method === "thread.create") return this.inject(state, "POST", apiRoutes.threads, params);
     if (method === "thread.resume") return this.inject(state, "POST", apiRoutes.resumeThread, params);
+    if (method === "thread.restore") return this.inject(state, "POST", apiRoutes.resumeExitedThread(idParam(params)));
     if (method === "thread.exit") return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/exit`);
     if (method === "thread.send") return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/messages`, { text: stringParam(params, "text") });
     if (method === "thread.interrupt") return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/interrupt`);

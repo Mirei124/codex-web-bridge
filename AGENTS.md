@@ -22,3 +22,6 @@
 - Keep SSH host-key verification shared across CLI and Web entry points. A Web
   confirmation challenge must not persist the host or place its password in daemon
   memory; mutate either only after the confirmed fingerprint has been accepted.
+- Pass user-provided remote environment values through the argument-based
+  `commandLine`/`shellQuote` path. Never interpolate proxy URLs or other external
+  values into tmux command strings.

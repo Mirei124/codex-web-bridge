@@ -28,9 +28,9 @@ const usage = `Usage:
   codex-web-bridge host upsert (--input-json JSON | --input-file PATH)
 
   codex-web-bridge thread list
-  codex-web-bridge thread get|exit|interrupt THREAD_ID
-  codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH
-  codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH
+  codex-web-bridge thread get|exit|restore|interrupt THREAD_ID
+  codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL]
+  codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL]
   codex-web-bridge thread send THREAD_ID (--text TEXT | --text-file PATH)
   codex-web-bridge thread wait|watch THREAD_ID [--timeout MILLISECONDS]
 
@@ -86,13 +86,14 @@ Create or update a host using explicit fields or a JSON object.`,
   thread: `Usage:
   codex-web-bridge thread list
   codex-web-bridge thread get THREAD_ID
-  codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH
-  codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH
+  codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL]
+  codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL]
   codex-web-bridge thread send|wait|watch|interrupt|exit ...`,
   "thread list": "Usage: codex-web-bridge thread list [--json]\n\nList bridge-managed Codex threads.",
   "thread get": "Usage: codex-web-bridge thread get THREAD_ID [--json]\n\nShow messages, pending requests, terminal state, and metadata.",
-  "thread create": "Usage: codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--json]\n\nCreate a new Codex thread.",
-  "thread resume": "Usage: codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--json]\n\nResume an existing Codex thread.",
+  "thread create": "Usage: codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL] [--json]\n\nCreate a new Codex thread.",
+  "thread resume": "Usage: codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL] [--json]\n\nResume an existing Codex thread as a new bridge-managed record.",
+  "thread restore": "Usage: codex-web-bridge thread restore THREAD_ID [--json]\n\nRestart an exited bridge-managed thread in place.",
   "thread send": "Usage: codex-web-bridge thread send THREAD_ID (--text TEXT | --text-file PATH) [--json]\n\nSend a new user message.",
   "thread wait": "Usage: codex-web-bridge thread wait THREAD_ID [--timeout MILLISECONDS] [--json]\n\nWait until the thread becomes idle, waiting, exited, or errored.",
   "thread watch": "Usage: codex-web-bridge thread watch THREAD_ID [--timeout MILLISECONDS] [--json]\n\nStream thread events until exit, error, timeout, or interruption.",
@@ -233,20 +234,22 @@ export function parseBusinessCommand(argv: string[]): ParsedCommand {
 
   if (group === "thread") {
     if (action === "list") { none(positional); return finish({ method: "thread.list", params: {}, stream: false }, options, json); }
-    if (["get", "exit", "interrupt"].includes(action)) {
+    if (["get", "exit", "restore", "interrupt"].includes(action)) {
       const threadId = one(positional, "thread ID");
       return finish({ method: `thread.${action}`, params: { threadId }, stream: false }, options, json);
     }
     if (action === "create") {
       none(positional);
+      const proxy = take(options, "--proxy");
       return finish({ method: "thread.create", params: {
-        hostId: take(options, "--host", true), cwd: take(options, "--cwd", true),
+        hostId: take(options, "--host", true), cwd: take(options, "--cwd", true), ...(proxy ? { proxy } : {}),
       }, stream: false }, options, json);
     }
     if (action === "resume") {
       none(positional);
+      const proxy = take(options, "--proxy");
       return finish({ method: "thread.resume", params: {
-        hostId: take(options, "--host", true), codexThreadId: take(options, "--codex-thread", true), cwd: take(options, "--cwd", true),
+        hostId: take(options, "--host", true), codexThreadId: take(options, "--codex-thread", true), cwd: take(options, "--cwd", true), ...(proxy ? { proxy } : {}),
       }, stream: false }, options, json);
     }
     if (action === "send") {

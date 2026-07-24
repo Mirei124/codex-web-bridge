@@ -31,6 +31,19 @@ describe("remote command safety", () => {
     expect(remote.calls.find(c => c[1][0] === "pipe-pane")?.[1].at(-1)).toContain("while true; do cat");
     expect(remote.calls.some(c => c[1][0] === "set-option" && c[1].includes("@cwb-thread") && c[1].includes("thread-1"))).toBe(true);
   });
+  it("injects proxy variables into Codex commands with shell-safe quoting", async () => {
+    const remote = new FakeRemote(); const runtime = new TmuxCodexRuntime(remote, { runtimeDirectory: "/safe/runtime" });
+    const proxy = "http://user:p'a$(bad)@proxy.example:8080";
+    const session = await runtime.start("proxied", "/repo", 43123, proxy);
+    await runtime.attachViewer(session, "/repo", "thread-1", proxy);
+    const appCommand = remote.calls.find(call => call[1][0] === "new-session")?.[1].at(-1);
+    const viewerCommand = remote.calls.find(call => call[1][0] === "split-window")?.[1].at(-1);
+    for (const command of [appCommand, viewerCommand]) {
+      expect(command).toContain("'env'");
+      expect(command).toContain(`'HTTPS_PROXY=http://user:p'\\''a$(bad)@proxy.example:8080'`);
+      expect(command).toContain("'https_proxy=http://");
+    }
+  });
   it("derives a private runtime directory from the remote SFTP home", async () => { const remote = new FakeRemote(); await new TmuxCodexRuntime(remote).start("private", "/repo", 43123); expect(remote.calls.find(call => call[0] === "mkdir")?.[1]).toContain("/home/alice/.local/state/codex-web-bridge/runtime"); expect(remote.calls.some(call => call[0] === "stat" && call[1][1] === "%u")).toBe(true); });
   it("rejects unsafe tmux names before issuing commands", async () => { const remote = new FakeRemote(); await expect(new TmuxCodexRuntime(remote).start("bad;name", "/tmp", 4000)).rejects.toThrow("Invalid"); expect(remote.calls).toHaveLength(0); });
   it("discovers an existing managed tmux session without replacing it", async () => { const remote = new FakeRemote(); remote.sessionExists = true; const result = await new TmuxCodexRuntime(remote, { runtimeDirectory: "/safe/runtime" }).start("existing", "/tmp", 4000); expect(result).toMatchObject({ appServerPane: "%1", viewerPane: "%2" }); expect(remote.calls.some(call => call[1][0] === "new-session")).toBe(false); });

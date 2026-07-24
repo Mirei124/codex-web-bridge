@@ -23,7 +23,7 @@ class WebSocketStub {
 }
 
 const thread: ThreadDetail = {
-  id: "t", hostId: "a", title: "Bridge", cwd: "/repo", status: "idle", updatedAt: "2026-01-01",
+  id: "t", codexThreadId: "codex-t", hostId: "a", title: "Bridge", cwd: "/repo", proxy: "http://proxy.example:7890", status: "idle", updatedAt: "2026-01-01",
   messages: [{ id: "m", role: "assistant", text: "Ready", createdAt: "2026-01-01" }],
   pendingRequests: [{ kind: "approval", requestId: "approve-1", title: "运行命令", detail: "需要执行", command: "pnpm test" }],
   terminal: { connected: true, takeover: false },
@@ -41,6 +41,7 @@ function authenticatedFetch() {
     if (path === "/api/hosts/a/codex-threads") return response([{ id: "codex-found", title: "Found task", cwd: "/repo/found" }]);
     if (path === "/api/threads" && !init?.method) return response([{ id: "t", hostId: "a", title: "Bridge", cwd: "/repo", status: "idle", updatedAt: "2026-01-01" }]);
     if (path === "/api/threads/t") return response(thread);
+    if (path === "/api/threads/t/resume") return response({ ...thread, status: "idle" });
     if (path === "/api/threads" && init?.method === "POST") return response({ ...thread, id: "created", title: "Created" });
     if (path === "/api/threads/resume") return response({ ...thread, id: "resumed", title: "Resumed" });
     return response(undefined, 204);
@@ -88,18 +89,20 @@ describe("dashboard security and operations", () => {
     const fetch = authenticatedFetch(); vi.stubGlobal("fetch", fetch); render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /新会话/ }));
     fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "/repo/new" } });
+    fireEvent.change(screen.getByLabelText("代理地址（可选）"), { target: { value: "http://proxy.example:7890" } });
     fireEvent.click(within(screen.getByRole("heading", { name: "创建会话" }).parentElement!).getByRole("button", { name: "创建" }));
     expect(await screen.findByRole("heading", { name: "Created" })).toBeInTheDocument();
     const create = fetch.mock.calls.find(call => call[0] === "/api/threads" && (call[1] as RequestInit | undefined)?.method === "POST")![1] as RequestInit;
-    expect(JSON.parse(String(create.body))).toEqual({ hostId: "a", cwd: "/repo/new" });
+    expect(JSON.parse(String(create.body))).toEqual({ hostId: "a", cwd: "/repo/new", proxy: "http://proxy.example:7890" });
     fireEvent.click(screen.getByRole("button", { name: "恢复" }));
     fireEvent.change(screen.getByLabelText("Codex Thread ID"), { target: { value: "codex-123" } });
     fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "/repo/resumed" } });
+    fireEvent.change(screen.getByLabelText("代理地址（可选）"), { target: { value: "https://proxy.example:8443" } });
     fireEvent.click(within(screen.getByRole("heading", { name: "恢复会话" }).parentElement!).getByRole("button", { name: "恢复" }));
     expect(await screen.findByRole("heading", { name: "Resumed" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith("/api/threads/resume", expect.objectContaining({ method: "POST" }));
     const resume = fetch.mock.calls.find(call => call[0] === "/api/threads/resume")![1] as RequestInit;
-    expect(JSON.parse(String(resume.body))).toEqual({ hostId: "a", codexThreadId: "codex-123", cwd: "/repo/resumed" });
+    expect(JSON.parse(String(resume.body))).toEqual({ hostId: "a", codexThreadId: "codex-123", cwd: "/repo/resumed", proxy: "https://proxy.example:8443" });
   });
 
   it("confirms a scanned fingerprint before adding a host with optional metadata", async () => {
@@ -166,8 +169,13 @@ describe("dashboard security and operations", () => {
       expect(paths).toContainEqual(["/api/threads/t/interrupt", "POST"]);
       expect(paths).toContainEqual(["/api/threads/t/exit", "POST"]);
     });
-    expect(screen.getByRole("button", { name: "已退出" })).toBeDisabled();
+    const resumeButton = screen.getByRole("button", { name: "恢复会话" });
+    expect(resumeButton).toBeEnabled();
     expect(screen.getByPlaceholderText("该会话已退出")).toBeDisabled();
+    fireEvent.click(resumeButton);
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/threads/t/resume", expect.objectContaining({ method: "POST" })));
+    expect(screen.getByRole("button", { name: "退出会话" })).toBeEnabled();
+    expect(screen.getByText("Ready")).toBeInTheDocument();
   });
 
   it("shows an exit failure and keeps the selected thread active", async () => {

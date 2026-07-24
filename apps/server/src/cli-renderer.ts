@@ -151,7 +151,7 @@ export function renderHuman(data: unknown, context: RenderContext = {}): string 
   if (daemon !== undefined) return daemon;
   const operation = operationResult(context.method, context.params, data as Row);
   if (operation !== undefined) return operation;
-  if (["thread.get", "thread.create", "thread.resume", "thread.wait", "thread.watch"].includes(context.method ?? "")) {
+  if (["thread.get", "thread.create", "thread.resume", "thread.restore", "thread.wait", "thread.watch"].includes(context.method ?? "")) {
     return threadDetails(data as Row);
   }
   if (context.method === "host.get") {

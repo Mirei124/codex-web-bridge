@@ -22,7 +22,7 @@ const Database = (process.versions.bun
 
 export interface SessionRecord { id: string; csrfToken: string; createdAt: number; expiresAt: number }
 export interface HostRecord { id: string; name: string; hostname: string; port: number; username: string; hostKeySha256: string; identityFile: string; createdAt: number }
-export interface ThreadRecord { id: string; hostId: string; codexThreadId?: string; tmuxSession: string; remotePort?: number; workingDirectory: string; title: string; status: string; createdAt: number; updatedAt: number }
+export interface ThreadRecord { id: string; hostId: string; codexThreadId?: string; tmuxSession: string; remotePort?: number; workingDirectory: string; proxy?: string; title: string; status: string; createdAt: number; updatedAt: number }
 export interface MessageRecord { id: string; threadId: string; role: string; text: string; streaming: number; createdAt: number }
 export interface PendingRecord { id: string; threadId: string; payload: string; rpcId: string; method: string; params: string; resolvedAt?: number; createdAt: number }
 
@@ -49,7 +49,7 @@ export class Storage {
       CREATE TABLE IF NOT EXISTS threads (
         id TEXT PRIMARY KEY, host_id TEXT NOT NULL REFERENCES hosts(id),
         codex_thread_id TEXT, tmux_session TEXT NOT NULL UNIQUE, remote_port INTEGER,
-        working_directory TEXT NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL,
+        working_directory TEXT NOT NULL, proxy TEXT, title TEXT NOT NULL, status TEXT NOT NULL,
         created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS threads_host_id ON threads(host_id);
@@ -65,6 +65,7 @@ export class Storage {
     const threadColumns = this.db.prepare("PRAGMA table_info(threads)").all() as Array<{ name: string }>;
     if (!threadColumns.some(column => column.name === "title")) this.db.exec("ALTER TABLE threads ADD COLUMN title TEXT NOT NULL DEFAULT 'Codex thread'");
     if (!threadColumns.some(column => column.name === "remote_port")) this.db.exec("ALTER TABLE threads ADD COLUMN remote_port INTEGER");
+    if (!threadColumns.some(column => column.name === "proxy")) this.db.exec("ALTER TABLE threads ADD COLUMN proxy TEXT");
     const pendingColumns=this.db.prepare("PRAGMA table_info(pending_requests)").all() as Array<{name:string}>;
     if(!pendingColumns.some(column=>column.name==="rpc_id"))this.db.exec("ALTER TABLE pending_requests ADD COLUMN rpc_id TEXT NOT NULL DEFAULT 'null'");
     if(!pendingColumns.some(column=>column.name==="method"))this.db.exec("ALTER TABLE pending_requests ADD COLUMN method TEXT NOT NULL DEFAULT ''");
@@ -83,9 +84,9 @@ export class Storage {
   hosts(): HostRecord[] { return this.db.prepare("SELECT id,name,hostname,port,username,host_key_sha256 AS hostKeySha256,identity_file AS identityFile,created_at AS createdAt FROM hosts ORDER BY name").all() as HostRecord[]; }
   host(id: string): HostRecord | undefined { return this.db.prepare("SELECT id,name,hostname,port,username,host_key_sha256 AS hostKeySha256,identity_file AS identityFile,created_at AS createdAt FROM hosts WHERE id=?").get(id) as HostRecord | undefined; }
   upsertHost(host: HostRecord): void { this.db.prepare("INSERT INTO hosts(id,name,hostname,port,username,host_key_sha256,identity_file,created_at) VALUES(@id,@name,@hostname,@port,@username,@hostKeySha256,@identityFile,@createdAt) ON CONFLICT(id) DO UPDATE SET name=excluded.name,hostname=excluded.hostname,port=excluded.port,username=excluded.username,host_key_sha256=excluded.host_key_sha256,identity_file=excluded.identity_file").run(host); }
-  threads(): ThreadRecord[] { return this.db.prepare("SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,title,status,created_at AS createdAt,updated_at AS updatedAt FROM threads ORDER BY updated_at DESC").all() as ThreadRecord[]; }
-  thread(id: string): ThreadRecord | undefined { return this.db.prepare("SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,title,status,created_at AS createdAt,updated_at AS updatedAt FROM threads WHERE id=?").get(id) as ThreadRecord | undefined; }
-  createThread(thread: ThreadRecord): void { this.db.prepare("INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,title,status,created_at,updated_at) VALUES(@id,@hostId,@codexThreadId,@tmuxSession,@remotePort,@workingDirectory,@title,@status,@createdAt,@updatedAt)").run({ ...thread, codexThreadId: thread.codexThreadId ?? null, remotePort: thread.remotePort ?? null }); }
+  threads(): ThreadRecord[] { return this.db.prepare("SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,title,status,created_at AS createdAt,updated_at AS updatedAt FROM threads ORDER BY updated_at DESC").all() as ThreadRecord[]; }
+  thread(id: string): ThreadRecord | undefined { return this.db.prepare("SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,title,status,created_at AS createdAt,updated_at AS updatedAt FROM threads WHERE id=?").get(id) as ThreadRecord | undefined; }
+  createThread(thread: ThreadRecord): void { this.db.prepare("INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,title,status,created_at,updated_at) VALUES(@id,@hostId,@codexThreadId,@tmuxSession,@remotePort,@workingDirectory,@proxy,@title,@status,@createdAt,@updatedAt)").run({ ...thread, codexThreadId: thread.codexThreadId ?? null, remotePort: thread.remotePort ?? null, proxy: thread.proxy ?? null }); }
   updateThread(id: string, update: { codexThreadId?: string; remotePort?: number; status?: string; updatedAt: number }): void { this.db.prepare("UPDATE threads SET codex_thread_id=COALESCE(@codexThreadId,codex_thread_id),remote_port=COALESCE(@remotePort,remote_port),status=COALESCE(@status,status),updated_at=@updatedAt WHERE id=@id").run({ id, codexThreadId: update.codexThreadId ?? null, remotePort:update.remotePort??null,status: update.status ?? null, updatedAt: update.updatedAt }); }
   messages(threadId: string): MessageRecord[] { return this.db.prepare("SELECT id,thread_id AS threadId,role,text,streaming,created_at AS createdAt FROM messages WHERE thread_id=? ORDER BY created_at,id").all(threadId) as MessageRecord[]; }
   putMessage(message: MessageRecord): void { this.db.prepare("INSERT INTO messages(id,thread_id,role,text,streaming,created_at) VALUES(@id,@threadId,@role,@text,@streaming,@createdAt) ON CONFLICT(id) DO UPDATE SET text=excluded.text,streaming=excluded.streaming").run(message); }

@@ -39,6 +39,7 @@ export interface ThreadSummary {
   hostId: string;
   title: string;
   cwd: string;
+  proxy?: string;
   status: ThreadStatus;
   updatedAt: string;
 }
@@ -106,8 +107,8 @@ export interface ThreadDetail extends ThreadSummary {
 
 export interface LoginRequest { password: string }
 export interface SessionResponse { authenticated: boolean; csrfToken?: string }
-export interface CreateThreadRequest { hostId: string; cwd: string }
-export interface ResumeThreadRequest { hostId: string; codexThreadId: string; cwd: string }
+export interface CreateThreadRequest { hostId: string; cwd: string; proxy?: string }
+export interface ResumeThreadRequest { hostId: string; codexThreadId: string; cwd: string; proxy?: string }
 export interface SendMessageRequest { text: string }
 export interface ResolveRequest {
   value?: string;
@@ -141,7 +142,7 @@ export type ClientEvent =
 
 export const controlMethods = [
   "host.list", "host.get", "host.upsert", "host.codexThreads",
-  "thread.list", "thread.get", "thread.create", "thread.resume", "thread.exit",
+  "thread.list", "thread.get", "thread.create", "thread.resume", "thread.restore", "thread.exit",
   "thread.send", "thread.interrupt", "thread.wait", "thread.watch",
   "request.list", "request.get", "request.resolve", "request.approve",
   "request.decline", "request.answer",
@@ -183,6 +184,7 @@ export const apiRoutes = {
   hosts: "/api/hosts",
   threads: "/api/threads",
   resumeThread: "/api/threads/resume",
+  resumeExitedThread: (threadId: string) => `/api/threads/${encodeURIComponent(threadId)}/resume`,
   events: "/api/events",
   hostCodexThreads: (hostId: string) => `/api/hosts/${encodeURIComponent(hostId)}/codex-threads`,
 } as const;

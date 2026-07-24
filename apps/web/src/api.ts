@@ -41,6 +41,7 @@ export const api = {
   thread: (id: string) => request<ThreadDetail>(`${apiRoutes.threads}/${encodeURIComponent(id)}`),
   createThread: (body: CreateThreadRequest) => request<ThreadDetail>(apiRoutes.threads, { method: "POST", body: JSON.stringify(body) }),
   resumeThread: (body: ResumeThreadRequest) => request<ThreadDetail>(apiRoutes.resumeThread, { method: "POST", body: JSON.stringify(body) }),
+  resumeExitedThread: (id: string) => request<ThreadDetail>(apiRoutes.resumeExitedThread(id), { method: "POST" }),
   exitThread: (id: string) => request<void>(`${apiRoutes.threads}/${encodeURIComponent(id)}/exit`, { method: "POST" }),
   sendMessage: (id: string, body: SendMessageRequest) => request<void>(`${apiRoutes.threads}/${encodeURIComponent(id)}/messages`, { method: "POST", body: JSON.stringify(body) }),
   interrupt: (id: string) => request<void>(`${apiRoutes.threads}/${encodeURIComponent(id)}/interrupt`, { method: "POST" }),
