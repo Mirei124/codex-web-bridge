@@ -95,11 +95,11 @@ describe("LLM-oriented CLI command parsing", () => {
   });
 
   it.each([
-    [["thread", "create", "--host", "machine-a", "--cwd", "/work"], "thread.create", {
-      hostId: "machine-a", cwd: "/work",
+    [["thread", "create", "--host", "machine-a", "--cwd", "/work", "--prepend-path", "/thread/bin"], "thread.create", {
+      hostId: "machine-a", cwd: "/work", prependPath: "/thread/bin",
     }],
-    [["thread", "resume", "--host", "machine-a", "--codex-thread", "codex-1", "--cwd", "/work"], "thread.resume", {
-      hostId: "machine-a", codexThreadId: "codex-1", cwd: "/work",
+    [["thread", "resume", "--host", "machine-a", "--codex-thread", "codex-1", "--cwd", "/work", "--prepend-path", "/thread/bin"], "thread.resume", {
+      hostId: "machine-a", codexThreadId: "codex-1", cwd: "/work", prependPath: "/thread/bin",
     }],
     [["thread", "create", "--host", "machine-a", "--cwd", "/work", "--proxy", "http://proxy:8080"], "thread.create", {
       hostId: "machine-a", cwd: "/work", proxy: "http://proxy:8080",

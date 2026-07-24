@@ -90,19 +90,21 @@ describe("dashboard security and operations", () => {
     fireEvent.click(await screen.findByRole("button", { name: /新会话/ }));
     fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "/repo/new" } });
     fireEvent.change(screen.getByLabelText("代理地址（可选）"), { target: { value: "http://proxy.example:7890" } });
+    fireEvent.change(screen.getByLabelText(/^会话前置 PATH/), { target: { value: "/thread/bin:/opt/bin" } });
     fireEvent.click(within(screen.getByRole("heading", { name: "创建会话" }).parentElement!).getByRole("button", { name: "创建" }));
     expect(await screen.findByRole("heading", { name: "Created" })).toBeInTheDocument();
     const create = fetch.mock.calls.find(call => call[0] === "/api/threads" && (call[1] as RequestInit | undefined)?.method === "POST")![1] as RequestInit;
-    expect(JSON.parse(String(create.body))).toEqual({ hostId: "a", cwd: "/repo/new", proxy: "http://proxy.example:7890" });
+    expect(JSON.parse(String(create.body))).toEqual({ hostId: "a", cwd: "/repo/new", proxy: "http://proxy.example:7890", prependPath:"/thread/bin:/opt/bin" });
     fireEvent.click(screen.getByRole("button", { name: "恢复" }));
     fireEvent.change(screen.getByLabelText("Codex Thread ID"), { target: { value: "codex-123" } });
     fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "/repo/resumed" } });
     fireEvent.change(screen.getByLabelText("代理地址（可选）"), { target: { value: "https://proxy.example:8443" } });
+    fireEvent.change(screen.getByLabelText(/^会话前置 PATH/), { target: { value: "/resume/bin" } });
     fireEvent.click(within(screen.getByRole("heading", { name: "恢复会话" }).parentElement!).getByRole("button", { name: "恢复" }));
     expect(await screen.findByRole("heading", { name: "Resumed" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith("/api/threads/resume", expect.objectContaining({ method: "POST" }));
     const resume = fetch.mock.calls.find(call => call[0] === "/api/threads/resume")![1] as RequestInit;
-    expect(JSON.parse(String(resume.body))).toEqual({ hostId: "a", codexThreadId: "codex-123", cwd: "/repo/resumed", proxy: "https://proxy.example:8443" });
+    expect(JSON.parse(String(resume.body))).toEqual({ hostId: "a", codexThreadId: "codex-123", cwd: "/repo/resumed", proxy: "https://proxy.example:8443", prependPath:"/resume/bin" });
   });
 
   it("confirms a scanned fingerprint before adding a host with optional metadata", async () => {

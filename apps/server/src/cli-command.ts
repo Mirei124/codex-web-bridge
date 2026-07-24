@@ -29,8 +29,8 @@ const usage = `Usage:
 
   codex-web-bridge thread list
   codex-web-bridge thread get|exit|restore|delete|interrupt THREAD_ID
-  codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL]
-  codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL]
+  codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL] [--prepend-path PATH_VALUE]
+  codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL] [--prepend-path PATH_VALUE]
   codex-web-bridge thread send THREAD_ID (--text TEXT | --text-file PATH)
   codex-web-bridge thread wait|watch THREAD_ID [--timeout MILLISECONDS]
 
@@ -88,13 +88,13 @@ Create or update a host using explicit fields or a JSON object.
   thread: `Usage:
   codex-web-bridge thread list
   codex-web-bridge thread get THREAD_ID
-  codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL]
-  codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL]
+  codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL] [--prepend-path PATH_VALUE]
+  codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL] [--prepend-path PATH_VALUE]
   codex-web-bridge thread send|wait|watch|interrupt|exit ...`,
   "thread list": "Usage: codex-web-bridge thread list [--json]\n\nList bridge-managed Codex threads.",
   "thread get": "Usage: codex-web-bridge thread get THREAD_ID [--json]\n\nShow messages, pending requests, terminal state, and metadata.",
-  "thread create": "Usage: codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL] [--json]\n\nCreate a new Codex thread.",
-  "thread resume": "Usage: codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL] [--json]\n\nResume an existing Codex thread as a new bridge-managed record.",
+  "thread create": "Usage: codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL] [--prepend-path PATH_VALUE] [--json]\n\nCreate a new Codex thread. The thread PATH prefix is placed before the host PATH prefix.",
+  "thread resume": "Usage: codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL] [--prepend-path PATH_VALUE] [--json]\n\nResume an existing Codex thread as a new bridge-managed record.",
   "thread restore": "Usage: codex-web-bridge thread restore THREAD_ID [--json]\n\nRestart an exited bridge-managed thread in place.",
   "thread delete": "Usage: codex-web-bridge thread delete THREAD_ID [--json]\n\nRemove the bridge record without deleting Codex history or stopping remote tmux.",
   "thread send": "Usage: codex-web-bridge thread send THREAD_ID (--text TEXT | --text-file PATH) [--json]\n\nSend a new user message.",
@@ -245,15 +245,17 @@ export function parseBusinessCommand(argv: string[]): ParsedCommand {
     if (action === "create") {
       none(positional);
       const proxy = take(options, "--proxy");
+      const prependPath = take(options, "--prepend-path");
       return finish({ method: "thread.create", params: {
-        hostId: take(options, "--host", true), cwd: take(options, "--cwd", true), ...(proxy ? { proxy } : {}),
+        hostId: take(options, "--host", true), cwd: take(options, "--cwd", true), ...(proxy ? { proxy } : {}), ...(prependPath ? { prependPath } : {}),
       }, stream: false }, options, json);
     }
     if (action === "resume") {
       none(positional);
       const proxy = take(options, "--proxy");
+      const prependPath = take(options, "--prepend-path");
       return finish({ method: "thread.resume", params: {
-        hostId: take(options, "--host", true), codexThreadId: take(options, "--codex-thread", true), cwd: take(options, "--cwd", true), ...(proxy ? { proxy } : {}),
+        hostId: take(options, "--host", true), codexThreadId: take(options, "--codex-thread", true), cwd: take(options, "--cwd", true), ...(proxy ? { proxy } : {}), ...(prependPath ? { prependPath } : {}),
       }, stream: false }, options, json);
     }
     if (action === "send") {

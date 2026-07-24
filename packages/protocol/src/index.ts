@@ -42,6 +42,7 @@ export interface ThreadSummary {
   title: string;
   cwd: string;
   proxy?: string;
+  prependPath?: string;
   status: ThreadStatus;
   updatedAt: string;
 }
@@ -122,8 +123,8 @@ export interface UpdateSettingsRequest {
   publicOrigin: string;
   newPassword?: string;
 }
-export interface CreateThreadRequest { hostId: string; cwd: string; proxy?: string }
-export interface ResumeThreadRequest { hostId: string; codexThreadId: string; cwd: string; proxy?: string }
+export interface CreateThreadRequest { hostId: string; cwd: string; proxy?: string; prependPath?: string }
+export interface ResumeThreadRequest { hostId: string; codexThreadId: string; cwd: string; proxy?: string; prependPath?: string }
 export interface SendMessageRequest { text: string }
 export interface ResolveRequest {
   value?: string;

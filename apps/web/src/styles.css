@@ -141,6 +141,7 @@ nav span{font-weight:800}nav small{color:#91836d;font-weight:500;margin-top:3px}
 .modal::before{content:"";display:block;width:48px;height:8px;margin:-12px auto 18px;border-radius:10px;background:#82d5bb}
 .modal .actions{justify-content:flex-end;position:sticky;bottom:-28px;margin-top:22px;background:linear-gradient(transparent 0,var(--paper) 35%);padding:20px 0 4px}
 .modal pre{overflow:auto;padding:13px;border-radius:16px;color:#fff;background:#2b2118}
+.modal label small{color:#9f927d;font-size:12px;font-weight:500;line-height:1.45;padding:0 6px}
 .terminal-panel{padding:18px;min-height:0;display:flex;flex:1;flex-direction:column}
 .terminal-toolbar{display:flex;justify-content:space-between;align-items:center;padding:0 3px 14px;color:#8a7b66;font-weight:700}
 .terminal{flex:1;min-height:260px;background:#2b2118;padding:10px;border:4px solid #9a835a;border-radius:22px;box-shadow:inset 0 0 0 2px #4c3c2d,0 5px 0 #705d3d;overflow:hidden}

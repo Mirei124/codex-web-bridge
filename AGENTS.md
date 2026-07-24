@@ -28,6 +28,9 @@
 - Treat a host-specific PATH setting as a literal list of absolute directories to
   prepend to the non-interactive SSH `PATH`. Apply it at the SSH command boundary
   for prerequisite checks, tmux, Codex, helper commands, and streams.
+- A thread-specific PATH prefix is persisted with the thread and takes precedence
+  over the host prefix. Compose them as thread, then host, then the remote PATH so
+  reconnect and restore preserve the same launch environment.
 - Deleting a bridge thread is different from exiting its remote session. Detach the
   local runtime before deleting the database record, but leave the remote tmux
   session and Codex history untouched.
