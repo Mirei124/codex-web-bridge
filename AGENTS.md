@@ -59,3 +59,6 @@
   Fastify rejects empty JSON bodies before lifecycle handlers such as exit, delete,
   resume, interrupt, and logout can run. Add the JSON content type only when a body
   is present.
+- Fresh Codex threads may remain headless until terminal functionality is requested.
+  Screenshot, takeover, and terminal input paths must prepare the viewer pane and
+  terminal stream on demand before capturing or accepting input.

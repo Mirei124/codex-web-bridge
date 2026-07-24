@@ -29,6 +29,7 @@ class FakeRuntime implements RuntimeManager {
   async send() { return "turn-1"; }
   async interrupt() {}
   async resolve(_thread: unknown, requestId: string | number, value: unknown) { this.resolutions.push({ requestId, value }); }
+  async prepareTerminal() {}
   async terminalInput(_thread: unknown, data: string) { this.terminalInputs.push(data); }
   async terminalSeed() { return ""; }
   async screenshot() { return Buffer.from([137, 80, 78, 71]); }
