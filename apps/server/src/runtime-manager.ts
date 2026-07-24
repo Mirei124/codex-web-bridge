@@ -13,6 +13,7 @@ export interface RuntimeManager {
   create(host: HostRecord, thread: ThreadRecord): Promise<string>;
   resume(host: HostRecord, thread: ThreadRecord, codexThreadId: string): Promise<void>;
   reconnect(host: HostRecord, thread: ThreadRecord): Promise<void>;
+  detach?(threadId: string): Promise<void>;
   exit(thread: ThreadRecord, host?: HostRecord): Promise<void>;
   send(thread: ThreadRecord, text: string): Promise<string | undefined>;
   interrupt(thread: ThreadRecord): Promise<void>;
@@ -42,6 +43,7 @@ export class HostRuntimeManager implements RuntimeManager {
   private readonly active = new Map<string, Active>();
   private readonly connecting=new Set<string>();
   private readonly retries=new Map<string,RetryState>();
+  private readonly detached=new Set<string>();
   private closing=false;
   private readonly hostPasswords = new Map<string, string>();
   constructor(private readonly options:HostRuntimeManagerOptions={}){}
@@ -61,16 +63,19 @@ export class HostRuntimeManager implements RuntimeManager {
     throw lastError instanceof Error?lastError:new Error("unable to start Codex history probe");
   }
   async create(host: HostRecord, thread: ThreadRecord): Promise<string> {
+    this.detached.delete(thread.id);
     const active = await this.open(host, thread);
     try{const created = await active.client.createThread({ cwd: thread.workingDirectory });await this.activate(host,{...thread,codexThreadId:created.id},active,false);return created.id;}
-    catch(error){await this.dispose(active,{stopTmux:active.tmuxCreated});throw error;}
+    catch(error){await this.dispose(active,{stopTmux:active.tmuxCreated&&!this.detached.has(thread.id)});throw error;}
   }
   async resume(host: HostRecord, thread: ThreadRecord, codexThreadId: string): Promise<void> {
+    this.detached.delete(thread.id);
     const active = await this.open(host, thread);
     try{await active.client.resumeThread(codexThreadId, { cwd: thread.workingDirectory });active.session = await active.runtime.attachViewer(active.session, thread.workingDirectory, codexThreadId, thread.proxy);await this.activate(host,thread,active,true);}
-    catch(error){await this.dispose(active,{stopTmux:active.tmuxCreated});throw error;}
+    catch(error){await this.dispose(active,{stopTmux:active.tmuxCreated&&!this.detached.has(thread.id)});throw error;}
   }
-  async reconnect(host: HostRecord, thread: ThreadRecord): Promise<void> { if(this.active.has(thread.id))return;if(!thread.codexThreadId)throw new Error("thread has no Codex id");this.events.emit("connectionGenerationChanged",{threadId:thread.id});this.cancelRetry(thread.id);const state={host,thread,attempt:0,cancelled:false};this.retries.set(thread.id,state);await this.tryReconnect(state); }
+  async reconnect(host: HostRecord, thread: ThreadRecord): Promise<void> { if(this.active.has(thread.id))return;if(!thread.codexThreadId)throw new Error("thread has no Codex id");this.detached.delete(thread.id);this.events.emit("connectionGenerationChanged",{threadId:thread.id});this.cancelRetry(thread.id);const state={host,thread,attempt:0,cancelled:false};this.retries.set(thread.id,state);await this.tryReconnect(state); }
+  async detach(threadId:string):Promise<void>{this.detached.add(threadId);this.cancelRetry(threadId);const active=this.active.get(threadId);if(!active)return;this.active.delete(threadId);await this.dispose(active,{stopTmux:false});}
   async exit(thread: ThreadRecord, host?:HostRecord): Promise<void> { this.cancelRetry(thread.id);const active=this.active.get(thread.id);if(active){this.active.delete(thread.id);await this.dispose(active,{stopTmux:true,requireStop:true});return;}if(!host)throw new Error("host is required to exit a disconnected thread");const ssh=await this.createSsh(host);try{await ssh.connect();await (this.options.runtimeFactory?.(ssh)??new TmuxCodexRuntime(withPrependedPath(ssh,host.prependPath))).stop(thread.tmuxSession);}finally{ssh.close();} }
   async send(thread: ThreadRecord, text: string): Promise<string | undefined> { const active = this.must(thread.id); const result = await active.client.startTurn(thread.codexThreadId!, text) as { turn?: { id?: string } }; active.turnId = result.turn?.id;if(!active.session.viewerPane){try{active.session=await active.runtime.attachViewer(active.session,thread.workingDirectory,thread.codexThreadId!,thread.proxy);await this.attachTerminal(thread.id,active);}catch(error){this.connectionLost(thread.id,active,"viewer attach failed");throw error;}}return active.turnId; }
   async interrupt(thread: ThreadRecord): Promise<void> { const active = this.must(thread.id); if (active.turnId) await active.client.interruptTurn(thread.codexThreadId!, active.turnId); }
@@ -85,7 +90,7 @@ export class HostRuntimeManager implements RuntimeManager {
     let tmuxCreated=false;
     try{ssh=await this.createSsh(host);await ssh.connect();runtime=this.options.runtimeFactory?.(ssh)??new TmuxCodexRuntime(withPrependedPath(ssh,host.prependPath));await runtime.checkPrerequisites();const existed=await runtime.exists(thread.tmuxSession);session=await runtime.start(thread.tmuxSession,thread.workingDirectory,thread.remotePort,thread.proxy);tmuxCreated=!existed;await runtime.waitUntilReady(session);forward=await ssh.forwardRemotePort(thread.remotePort);client=this.options.clientFactory?.(`ws://127.0.0.1:${forward.port}`)??new CodexClient({url:`ws://127.0.0.1:${forward.port}`});client.on("notification",payload=>this.events.emit("event",{threadId:thread.id,type:"codex",payload} satisfies RuntimeEvent));client.on("request",payload=>this.events.emit("event",{threadId:thread.id,type:"codex",payload} satisfies RuntimeEvent));await client.connect();return {hostId:host.id,ssh,runtime,session,client,forward,tmuxCreated};}catch(error){client?.close();await forward?.close().catch(()=>undefined);if(runtime&&session&&tmuxCreated)await runtime.stop(session.name).catch(()=>undefined);ssh?.close();throw error;}finally{this.connecting.delete(host.id);}
   }
-  private async activate(host:HostRecord,thread:ThreadRecord,active:Active,withTerminal:boolean):Promise<void>{this.active.set(thread.id,active);this.retries.set(thread.id,{host,thread,attempt:0,cancelled:false});const lost=()=>this.connectionLost(thread.id,active);active.client.on("transportError",lost);active.client.on("transportClose",lost);try{if(withTerminal)await this.attachTerminal(thread.id,active);}catch(error){this.active.delete(thread.id);throw error;}}
+  private async activate(host:HostRecord,thread:ThreadRecord,active:Active,withTerminal:boolean):Promise<void>{if(this.detached.has(thread.id))throw new Error("thread runtime was detached");this.active.set(thread.id,active);this.retries.set(thread.id,{host,thread,attempt:0,cancelled:false});const lost=()=>this.connectionLost(thread.id,active);active.client.on("transportError",lost);active.client.on("transportClose",lost);try{if(withTerminal)await this.attachTerminal(thread.id,active);}catch(error){this.active.delete(thread.id);throw error;}}
   private async attachTerminal(threadId:string,active:Active):Promise<void>{await this.pipe(threadId,active);const lost=()=>this.connectionLost(threadId,active);active.stream!.once("close",lost);active.stream!.once("error",lost);}
   private async pipe(threadId: string, active: Active): Promise<void> { active.stream = await active.runtime.terminalStream(active.session); active.stream.on("data", data => this.events.emit("event", { threadId, type: "terminal", payload: data.toString("utf8") } satisfies RuntimeEvent)); }
   private connectionLost(threadId:string,active:Active,reason?:string):void{if(this.closing||this.active.get(threadId)!==active)return;this.events.emit("connectionGenerationChanged",{threadId,reason});this.events.emit("connectionLost",{threadId,reason});this.active.delete(threadId);void this.dispose(active,{stopTmux:false}).finally(()=>{const state=this.retries.get(threadId);if(state&&!state.cancelled)this.scheduleRetry(state);});}

@@ -85,6 +85,7 @@ export class Storage {
       .get(id, now) as SessionRecord | undefined;
   }
   deleteSession(id: string): void { this.db.prepare("DELETE FROM login_sessions WHERE id = ?").run(id); }
+  deleteAllSessions(): void { this.db.prepare("DELETE FROM login_sessions").run(); }
   pruneSessions(now = Date.now()): void { this.db.prepare("DELETE FROM login_sessions WHERE expires_at <= ?").run(now); }
   hosts(): HostRecord[] { return this.db.prepare("SELECT id,name,hostname,port,username,host_key_sha256 AS hostKeySha256,identity_file AS identityFile,prepend_path AS prependPath,created_at AS createdAt FROM hosts ORDER BY name").all() as HostRecord[]; }
   host(id: string): HostRecord | undefined { return this.db.prepare("SELECT id,name,hostname,port,username,host_key_sha256 AS hostKeySha256,identity_file AS identityFile,prepend_path AS prependPath,created_at AS createdAt FROM hosts WHERE id=?").get(id) as HostRecord | undefined; }
@@ -93,6 +94,7 @@ export class Storage {
   thread(id: string): ThreadRecord | undefined { return this.db.prepare("SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,title,status,created_at AS createdAt,updated_at AS updatedAt FROM threads WHERE id=?").get(id) as ThreadRecord | undefined; }
   createThread(thread: ThreadRecord): void { this.db.prepare("INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,title,status,created_at,updated_at) VALUES(@id,@hostId,@codexThreadId,@tmuxSession,@remotePort,@workingDirectory,@proxy,@title,@status,@createdAt,@updatedAt)").run({ ...thread, codexThreadId: thread.codexThreadId ?? null, remotePort: thread.remotePort ?? null, proxy: thread.proxy ?? null }); }
   updateThread(id: string, update: { codexThreadId?: string; remotePort?: number; status?: string; updatedAt: number }): void { this.db.prepare("UPDATE threads SET codex_thread_id=COALESCE(@codexThreadId,codex_thread_id),remote_port=COALESCE(@remotePort,remote_port),status=COALESCE(@status,status),updated_at=@updatedAt WHERE id=@id").run({ id, codexThreadId: update.codexThreadId ?? null, remotePort:update.remotePort??null,status: update.status ?? null, updatedAt: update.updatedAt }); }
+  deleteThread(id: string): boolean { return this.db.prepare("DELETE FROM threads WHERE id=?").run(id).changes === 1; }
   messages(threadId: string): MessageRecord[] { return this.db.prepare("SELECT id,thread_id AS threadId,role,text,streaming,created_at AS createdAt FROM messages WHERE thread_id=? ORDER BY created_at,id").all(threadId) as MessageRecord[]; }
   putMessage(message: MessageRecord): void { this.db.prepare("INSERT INTO messages(id,thread_id,role,text,streaming,created_at) VALUES(@id,@threadId,@role,@text,@streaming,@createdAt) ON CONFLICT(id) DO UPDATE SET text=excluded.text,streaming=excluded.streaming").run(message); }
   appendMessage(id: string, text: string, streaming: boolean): void { this.db.prepare("UPDATE messages SET text=text||?,streaming=? WHERE id=?").run(text,streaming?1:0,id); }

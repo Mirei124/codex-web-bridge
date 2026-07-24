@@ -7,10 +7,10 @@ import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import cookie from "@fastify/cookie";
 import { WebSocketServer, WebSocket } from "ws";
-import { apiRoutes, serverEventThreadId, type PendingRequest, type ServerEvent, type ThreadDetail, type ThreadSummary } from "@cwb/protocol";
-import { type AppConfig } from "@cwb/config";
+import { apiRoutes, serverEventThreadId, type PendingRequest, type ServerEvent, type SettingsResponse, type ThreadDetail, type ThreadSummary, type UpdateSettingsRequest } from "@cwb/protocol";
+import { parseConfig, paths, saveConfig, type AppConfig } from "@cwb/config";
 import { Storage, type HostRecord, type SessionRecord, type ThreadRecord } from "@cwb/storage";
-import { sameToken, token, verifyPassword } from "./auth.js";
+import { hashPassword, sameToken, token, verifyPassword } from "./auth.js";
 import { HostKeyError, internalHostKeyToken, verifyHostKey } from "./host-key.js";
 import { HostRuntimeManager, type RuntimeEvent, type RuntimeManager } from "./runtime-manager.js";
 
@@ -20,6 +20,7 @@ export interface ServerOptions {
   webRoot?: string | false;
   eventSink?: (event: ServerEvent) => void;
   hostKeyVerifier?: typeof verifyHostKey;
+  settingsSaver?: (config: AppConfig) => Promise<void>;
 }
 
 interface EmbeddedWebAsset {
@@ -59,6 +60,8 @@ function detail(storage: Storage, thread: ThreadRecord): ThreadDetail { return {
 export async function buildServer(config: AppConfig, storage: Storage, options: ServerOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: true, trustProxy: false });
   const runtime = options.runtime ?? new HostRuntimeManager();
+  let savedConfig = config;
+  const settingsSaver = options.settingsSaver ?? ((next: AppConfig) => saveConfig(next));
   const hostKeyVerifier = options.hostKeyVerifier ?? verifyHostKey;
   const takeover=new Map<string,{owner:string;expiresAt?:number}>();
   function activeLease(threadId:string){const lease=takeover.get(threadId);if(lease?.expiresAt!==undefined&&lease.expiresAt<=Date.now()){takeover.delete(threadId);return;}return lease;}
@@ -89,6 +92,18 @@ export async function buildServer(config: AppConfig, storage: Storage, options: 
   });
 
   app.get(apiRoutes.session, async request => ({ authenticated: true, csrfToken: request.loginSession!.csrfToken }));
+  app.get(apiRoutes.settings, async ():Promise<SettingsResponse> => ({ bindHost:savedConfig.bindHost,port:savedConfig.port,publicOrigin:savedConfig.publicOrigin,dataDir:paths().root,restartRequired:JSON.stringify(savedConfig)!==JSON.stringify(config) }));
+  app.put<{Body:UpdateSettingsRequest}>(apiRoutes.settings,async(request,reply)=>{
+    const value=request.body;
+    if(!value||!["127.0.0.1","0.0.0.0"].includes(value.bindHost)||!Number.isInteger(value.port)||value.port<1||value.port>65535||typeof value.publicOrigin!=="string"||(value.newPassword!==undefined&&(typeof value.newPassword!=="string"||value.newPassword.length<12)))return reply.code(400).send({error:"invalid settings"});
+    let origin:URL;try{origin=new URL(value.publicOrigin);}catch{return reply.code(400).send({error:"public origin must be a valid HTTP or HTTPS URL"});}
+    if(!["http:","https:"].includes(origin.protocol))return reply.code(400).send({error:"public origin must use HTTP or HTTPS"});
+    if(origin.origin!==value.publicOrigin)return reply.code(400).send({error:"public origin must contain only scheme, host, and port"});
+    const next=parseConfig({...savedConfig,bindHost:value.bindHost,port:value.port,publicOrigin:value.publicOrigin,...(value.newPassword?{passwordHash:await hashPassword(value.newPassword)}:{})});
+    await settingsSaver(next);savedConfig=next;
+    if(value.newPassword){storage.deleteAllSessions();for(const socket of sockets.keys())socket.close(1000,"password changed");}
+    return {bindHost:next.bindHost,port:next.port,publicOrigin:next.publicOrigin,dataDir:paths().root,restartRequired:true} satisfies SettingsResponse;
+  });
   app.post(apiRoutes.logout, async (request, reply) => { const sessionId=request.loginSession!.id;storage.deleteSession(sessionId);releaseLeases(sessionId);for(const [socket,state] of sockets)if(state.sessionId===sessionId)socket.close(1000,"logged out");reply.clearCookie("cwb_session", { path: "/", secure: config.publicOrigin.startsWith("https://"), sameSite: "strict" }); return reply.code(204).send(); });
   app.get(apiRoutes.hosts, async () => storage.hosts().map(h => ({ id: h.id, name: h.name, address: `${h.username}@${h.hostname}:${h.port}`, status: runtime.hostStatus?.(h.id)??"offline", hostname:h.hostname,port:h.port,username:h.username,hostKeySha256:h.hostKeySha256,identityFile:h.identityFile,prependPath:h.prependPath })));
   app.post<{ Body: Partial<Omit<HostRecord,"createdAt">> & {password?:string;clearPassword?:boolean;acceptHostKey?:boolean} }>(apiRoutes.hosts, async (request, reply) => {
@@ -166,6 +181,7 @@ export async function buildServer(config: AppConfig, storage: Storage, options: 
     catch(error){storage.updateThread(id,{status:"error",updatedAt:Date.now()});publish({type:"thread.updated",thread:summary(storage.thread(id)!)});throw error;}
   });
   const withThread = (id:string)=>{if(!validId(id))throw Object.assign(new Error("thread not found"),{statusCode:404});const thread=storage.thread(id);if(!thread)throw Object.assign(new Error("thread not found"),{statusCode:404});return thread;};
+  app.delete<{Params:{id:string}}>(`${apiRoutes.threads}/:id`,async(request,reply)=>{const thread=withThread(request.params.id);await runtime.detach?.(thread.id);takeover.delete(thread.id);storage.deleteThread(thread.id);publish({type:"thread.deleted",threadId:thread.id});return reply.code(204).send();});
   app.post<{Params:{id:string}}>(`${apiRoutes.threads}/:id/exit`,async(request,reply)=>{const thread=withThread(request.params.id),host=storage.host(thread.hostId);if(!host)return reply.code(409).send({error:"thread host no longer exists"});await runtime.exit(thread,host);storage.updateThread(thread.id,{status:"exited",updatedAt:Date.now()});publish({type:"thread.updated",thread:summary(storage.thread(thread.id)!)});return reply.code(204).send();});
   app.post<{Params:{id:string}}>(`${apiRoutes.threads}/:id/resume`,async(request,reply)=>{
     const thread=withThread(request.params.id);

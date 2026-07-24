@@ -55,6 +55,7 @@ describe("LLM-oriented CLI command parsing", () => {
     [["thread", "exit", "thread-1"], "thread.exit", { threadId: "thread-1" }],
     [["thread", "interrupt", "thread-1"], "thread.interrupt", { threadId: "thread-1" }],
     [["thread", "restore", "thread-1"], "thread.restore", { threadId: "thread-1" }],
+    [["thread", "delete", "thread-1"], "thread.delete", { threadId: "thread-1" }],
     [["request", "list", "thread-1"], "request.list", { threadId: "thread-1" }],
     [["request", "get", "thread-1", "request-1"], "request.get", { threadId: "thread-1", requestId: "request-1" }],
     [["request", "approve", "thread-1", "request-1"], "request.approve", { threadId: "thread-1", requestId: "request-1" }],

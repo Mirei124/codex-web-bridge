@@ -183,6 +183,7 @@ export class ControlServer {
     if (method === "thread.resume") return this.inject(state, "POST", apiRoutes.resumeThread, params);
     if (method === "thread.restore") return this.inject(state, "POST", apiRoutes.resumeExitedThread(idParam(params)));
     if (method === "thread.exit") return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/exit`);
+    if (method === "thread.delete") return this.inject(state, "DELETE", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}`);
     if (method === "thread.send") return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/messages`, { text: stringParam(params, "text") });
     if (method === "thread.interrupt") return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/interrupt`);
     if (method === "thread.watch" || method === "thread.wait" || method === "terminal.watch") {
@@ -277,13 +278,13 @@ export class ControlServer {
     });
   }
 
-  private async inject(state: Pick<ClientState, "sessionId" | "csrfToken">, method: "GET" | "POST", url: string, payload?: unknown): Promise<any> {
+  private async inject(state: Pick<ClientState, "sessionId" | "csrfToken">, method: "GET" | "POST" | "DELETE", url: string, payload?: unknown): Promise<any> {
     const result = await this.injectRaw(state, method, url, payload);
     if (result.body.length === 0) return {};
     return JSON.parse(result.body.toString("utf8"));
   }
 
-  private async injectRaw(state: Pick<ClientState, "sessionId" | "csrfToken">, method: "GET" | "POST", url: string, payload?: unknown) {
+  private async injectRaw(state: Pick<ClientState, "sessionId" | "csrfToken">, method: "GET" | "POST" | "DELETE", url: string, payload?: unknown) {
     const options: InjectOptions = {
       method,
       url,
@@ -292,7 +293,7 @@ export class ControlServer {
         origin: this.config.publicOrigin,
         cookie: `cwb_session=${state.sessionId}`,
         "x-cwb-internal-host-key": internalHostKeyToken,
-        ...(method === "POST" ? { "x-csrf-token": state.csrfToken } : {}),
+        ...(method !== "GET" ? { "x-csrf-token": state.csrfToken } : {}),
       },
       ...(payload === undefined ? {} : { payload: payload as InjectOptions["payload"] }),
     };

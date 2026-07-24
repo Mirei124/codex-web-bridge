@@ -109,6 +109,19 @@ export interface ThreadDetail extends ThreadSummary {
 
 export interface LoginRequest { password: string }
 export interface SessionResponse { authenticated: boolean; csrfToken?: string }
+export interface SettingsResponse {
+  bindHost: "127.0.0.1" | "0.0.0.0";
+  port: number;
+  publicOrigin: string;
+  dataDir: string;
+  restartRequired: boolean;
+}
+export interface UpdateSettingsRequest {
+  bindHost: "127.0.0.1" | "0.0.0.0";
+  port: number;
+  publicOrigin: string;
+  newPassword?: string;
+}
 export interface CreateThreadRequest { hostId: string; cwd: string; proxy?: string }
 export interface ResumeThreadRequest { hostId: string; codexThreadId: string; cwd: string; proxy?: string }
 export interface SendMessageRequest { text: string }
@@ -121,6 +134,7 @@ export interface ResolveRequest {
 export type ServerEvent =
   | { type: "snapshot"; thread: ThreadDetail }
   | { type: "thread.updated"; thread: ThreadSummary }
+  | { type: "thread.deleted"; threadId: string }
   | { type: "message.created"; threadId: string; message: ChatMessage }
   | { type: "message.delta"; threadId: string; messageId: string; delta: string }
   | { type: "message.completed"; threadId: string; messageId: string }
@@ -144,7 +158,7 @@ export type ClientEvent =
 
 export const controlMethods = [
   "host.list", "host.get", "host.upsert", "host.codexThreads",
-  "thread.list", "thread.get", "thread.create", "thread.resume", "thread.restore", "thread.exit",
+  "thread.list", "thread.get", "thread.create", "thread.resume", "thread.restore", "thread.exit", "thread.delete",
   "thread.send", "thread.interrupt", "thread.wait", "thread.watch",
   "request.list", "request.get", "request.resolve", "request.approve",
   "request.decline", "request.answer",
@@ -184,6 +198,7 @@ export const apiRoutes = {
   login: "/api/auth/login",
   logout: "/api/auth/logout",
   hosts: "/api/hosts",
+  settings: "/api/settings",
   threads: "/api/threads",
   resumeThread: "/api/threads/resume",
   resumeExitedThread: (threadId: string) => `/api/threads/${encodeURIComponent(threadId)}/resume`,

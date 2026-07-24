@@ -28,7 +28,7 @@ const usage = `Usage:
   codex-web-bridge host upsert (--input-json JSON | --input-file PATH)
 
   codex-web-bridge thread list
-  codex-web-bridge thread get|exit|restore|interrupt THREAD_ID
+  codex-web-bridge thread get|exit|restore|delete|interrupt THREAD_ID
   codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL]
   codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL]
   codex-web-bridge thread send THREAD_ID (--text TEXT | --text-file PATH)
@@ -96,6 +96,7 @@ Create or update a host using explicit fields or a JSON object.
   "thread create": "Usage: codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL] [--json]\n\nCreate a new Codex thread.",
   "thread resume": "Usage: codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL] [--json]\n\nResume an existing Codex thread as a new bridge-managed record.",
   "thread restore": "Usage: codex-web-bridge thread restore THREAD_ID [--json]\n\nRestart an exited bridge-managed thread in place.",
+  "thread delete": "Usage: codex-web-bridge thread delete THREAD_ID [--json]\n\nRemove the bridge record without deleting Codex history or stopping remote tmux.",
   "thread send": "Usage: codex-web-bridge thread send THREAD_ID (--text TEXT | --text-file PATH) [--json]\n\nSend a new user message.",
   "thread wait": "Usage: codex-web-bridge thread wait THREAD_ID [--timeout MILLISECONDS] [--json]\n\nWait until the thread becomes idle, waiting, exited, or errored.",
   "thread watch": "Usage: codex-web-bridge thread watch THREAD_ID [--timeout MILLISECONDS] [--json]\n\nStream thread events until exit, error, timeout, or interruption.",
@@ -237,7 +238,7 @@ export function parseBusinessCommand(argv: string[]): ParsedCommand {
 
   if (group === "thread") {
     if (action === "list") { none(positional); return finish({ method: "thread.list", params: {}, stream: false }, options, json); }
-    if (["get", "exit", "restore", "interrupt"].includes(action)) {
+    if (["get", "exit", "restore", "delete", "interrupt"].includes(action)) {
       const threadId = one(positional, "thread ID");
       return finish({ method: `thread.${action}`, params: { threadId }, stream: false }, options, json);
     }

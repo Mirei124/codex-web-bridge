@@ -1,6 +1,6 @@
 import type {
   CodexThreadSummary, CreateThreadRequest, HostConfig, HostSummary, LoginRequest, ResolveRequest, ResumeThreadRequest, SessionResponse,
-  SendMessageRequest, ThreadDetail, ThreadSummary,
+  SendMessageRequest, SettingsResponse, ThreadDetail, ThreadSummary, UpdateSettingsRequest,
 } from "@cwb/protocol";
 import { apiRoutes } from "@cwb/protocol";
 
@@ -39,6 +39,7 @@ export const api = {
   codexThreads: (hostId: string) => request<CodexThreadSummary[]>(apiRoutes.hostCodexThreads(hostId)),
   threads: () => request<ThreadSummary[]>(apiRoutes.threads),
   thread: (id: string) => request<ThreadDetail>(`${apiRoutes.threads}/${encodeURIComponent(id)}`),
+  deleteThread: (id: string) => request<void>(`${apiRoutes.threads}/${encodeURIComponent(id)}`, { method: "DELETE" }),
   createThread: (body: CreateThreadRequest) => request<ThreadDetail>(apiRoutes.threads, { method: "POST", body: JSON.stringify(body) }),
   resumeThread: (body: ResumeThreadRequest) => request<ThreadDetail>(apiRoutes.resumeThread, { method: "POST", body: JSON.stringify(body) }),
   resumeExitedThread: (id: string) => request<ThreadDetail>(apiRoutes.resumeExitedThread(id), { method: "POST" }),
@@ -49,4 +50,6 @@ export const api = {
   takeover: (id: string, enabled: boolean) => request<void>(`${apiRoutes.threads}/${encodeURIComponent(id)}/terminal/takeover`, { method: "POST", body: JSON.stringify({ enabled }) }),
   terminalInput: (id: string, data: string) => request<void>(`${apiRoutes.threads}/${encodeURIComponent(id)}/terminal/input`, { method: "POST", body: JSON.stringify({ data }) }),
   screenshotUrl: (id: string) => `${apiRoutes.threads}/${encodeURIComponent(id)}/terminal/screenshot?t=${Date.now()}`,
+  settings: () => request<SettingsResponse>(apiRoutes.settings),
+  updateSettings: (body: UpdateSettingsRequest) => request<SettingsResponse>(apiRoutes.settings, { method: "PUT", body: JSON.stringify(body) }),
 };

@@ -97,6 +97,7 @@ function operationResult(method: string | undefined, params: Row | undefined, da
   const requestId = scalar(params?.requestId);
   if (method === "host.upsert") return `Host ${hostId} saved.`;
   if (method === "thread.exit") return `Thread ${threadId} exited.`;
+  if (method === "thread.delete") return `Thread ${threadId} deleted from Codex Web Bridge.`;
   if (method === "thread.interrupt") return `Thread ${threadId} interrupted.`;
   if (method === "thread.send") return data.turnId ? `Turn ${scalar(data.turnId)} started.` : "Message sent.";
   if (method === "request.approve") return `Request ${requestId} approved.`;

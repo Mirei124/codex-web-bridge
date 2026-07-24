@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadDetail } from "@cwb/protocol";
-import App, { HostDialog } from "./App";
+import App, { HostDialog, SettingsPanel } from "./App";
 
 let terminalInput: ((data: string) => void) | undefined;
 let terminalWrites: string[] = [];
@@ -207,6 +207,47 @@ describe("dashboard security and operations", () => {
     fireEvent.click(screen.getByRole("button", { name: "退出会话" }));
     expect(await screen.findByText("tmux stop failed")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "退出会话" })).toBeEnabled();
+  });
+
+  it("deletes a thread from the sidebar without deleting Codex history", async () => {
+    const fetch = authenticatedFetch(); vi.stubGlobal("fetch", fetch); vi.stubGlobal("confirm", vi.fn(() => true));
+    render(<App />);
+    const remove = await screen.findByRole("button", { name: "删除会话 Bridge" });
+    expect(remove.closest("button")?.parentElement?.tagName).not.toBe("BUTTON");
+    fireEvent.click(remove);
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/threads/t", expect.objectContaining({ method: "DELETE" })));
+    expect(screen.queryByText("Bridge")).not.toBeInTheDocument();
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Codex 自身的会话记录不会被删除"));
+  });
+
+  it("removes a selected thread when the server emits thread.deleted", async () => {
+    await openThread();
+    WebSocketStub.instances.at(-1)?.emit({ type: "thread.deleted", threadId: "t" });
+    expect(await screen.findByRole("heading", { name: "选择一个会话" })).toBeInTheDocument();
+    expect(screen.queryByText("Bridge")).not.toBeInTheDocument();
+  });
+
+  it("updates daemon settings and warns before exposing the HTTP listener", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response({ bindHost: "127.0.0.1", port: 3210, publicOrigin: "", dataDir: "/var/lib/cwb", restartRequired: false }))
+      .mockResolvedValueOnce(response({ bindHost: "0.0.0.0", port: 4321, publicOrigin: "https://bridge.example.com", dataDir: "/var/lib/cwb", restartRequired: true }));
+    vi.stubGlobal("fetch", fetch); vi.stubGlobal("confirm", vi.fn(() => true));
+    render(<SettingsPanel />);
+    expect(await screen.findByLabelText("数据目录")).toHaveValue("/var/lib/cwb");
+    fireEvent.change(screen.getByLabelText("监听地址"), { target: { value: "0.0.0.0" } });
+    fireEvent.change(screen.getByLabelText("端口"), { target: { value: "4321" } });
+    fireEvent.change(screen.getByLabelText("公开访问地址"), { target: { value: "https://bridge.example.com" } });
+    fireEvent.change(screen.getByLabelText("新密码（留空表示不修改）"), { target: { value: "new-password-123" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("纯 HTTP 可能泄露密码和会话内容"));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(fetch).toHaveBeenLastCalledWith("/api/settings", expect.objectContaining({
+      method: "PUT",
+      body: JSON.stringify({ bindHost: "0.0.0.0", port: 4321, publicOrigin: "https://bridge.example.com", newPassword: "new-password-123" }),
+    }));
+    expect(await screen.findByText(/cwb restart/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "https://bridge.example.com" })).toHaveAttribute("href", "https://bridge.example.com");
+    expect(screen.getByLabelText("新密码（留空表示不修改）")).toHaveValue("");
   });
 
   it("keeps terminal input read-only until an explicit takeover event", async () => {
