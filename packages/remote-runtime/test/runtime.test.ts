@@ -8,6 +8,7 @@ class FakeRemote implements RemoteExecutor {
   streams: any[] = [];
   async execute(program: string, args: readonly string[] = []): Promise<CommandResult> {
     this.calls.push([program, args]);
+    if (program === "command" && args[0] === "-v") return { stdout: `/resolved/${args[1]}\n`, stderr: "", code: 0 };
     if (program === "tmux" && args[0] === "has-session") return { stdout: "", stderr: "", code: this.sessionExists ? 0 : 1 };
     if (program === "tmux" && args[0] === "list-panes") return { stdout: "%1\tapp-server\t\n%2\tviewer\tthread-1\n", stderr: "", code: 0 };
     if (program === "tmux" && args[0] === "new-session") return { stdout: "%1\n", stderr: "", code: 0 };
@@ -37,6 +38,14 @@ describe("remote command safety", () => {
     expect(remote.calls.find(c => c[1][0] === "new-session")?.[1]).toContain("/repo with spaces");
     expect(remote.calls.find(c => c[1][0] === "pipe-pane")?.[1].at(-1)).toContain("while true; do cat");
     expect(remote.calls.some(c => c[1][0] === "set-option" && c[1].includes("@cwb-thread") && c[1].includes("thread-1"))).toBe(true);
+  });
+  it("uses the absolute Codex path inside tmux panes instead of relying on the tmux server PATH", async () => {
+    const remote = new FakeRemote(); const runtime = new TmuxCodexRuntime(remote, { runtimeDirectory: "/safe/runtime" });
+    await runtime.checkPrerequisites();
+    const session = await runtime.start("absolute", "/repo", 43123);
+    await runtime.attachViewer(session, "/repo", "thread-1");
+    expect(remote.calls.find(call => call[1][0] === "new-session")?.[1].at(-1)).toContain("'/resolved/codex'");
+    expect(remote.calls.find(call => call[1][0] === "split-window")?.[1].at(-1)).toContain("'/resolved/codex'");
   });
   it("injects proxy variables into Codex commands with shell-safe quoting", async () => {
     const remote = new FakeRemote(); const runtime = new TmuxCodexRuntime(remote, { runtimeDirectory: "/safe/runtime" });

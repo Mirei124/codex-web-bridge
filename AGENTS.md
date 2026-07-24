@@ -31,6 +31,9 @@
 - A thread-specific PATH prefix is persisted with the thread and takes precedence
   over the host prefix. Compose them as thread, then host, then the remote PATH so
   reconnect and restore preserve the same launch environment.
+- Do not rely on a pre-existing tmux server to inherit PATH from the current SSH
+  command. Resolve Codex to an absolute path during prerequisite checks and use that
+  path in every tmux pane command.
 - Deleting a bridge thread is different from exiting its remote session. Detach the
   local runtime before deleting the database record, but leave the remote tmux
   session and Codex history untouched.
