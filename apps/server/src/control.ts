@@ -301,7 +301,7 @@ export class ControlServer {
     if (response.statusCode >= 400) {
       const body = response.json() as { error?: string; message?: string };
       const code = response.statusCode === 404 ? "NOT_FOUND" : response.statusCode === 409 ? "CONFLICT" : response.statusCode === 403 ? "FORBIDDEN" : response.statusCode >= 500 ? "RUNTIME_FAILURE" : "INVALID_ARGUMENT";
-      throw new ControlFailure(code, body.error ?? body.message ?? `request failed (${response.statusCode})`, response.statusCode >= 500);
+      throw new ControlFailure(code, body.message ?? body.error ?? `request failed (${response.statusCode})`, response.statusCode >= 500);
     }
     return { body: response.rawPayload, contentType: response.headers["content-type"] };
   }

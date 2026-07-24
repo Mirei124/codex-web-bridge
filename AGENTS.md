@@ -43,3 +43,7 @@
 - Persist daemon settings changed through the running server and report that a
   restart is required. Do not make an HTTP request handler stop and replace its own
   daemon process.
+- When translating Fastify error responses to CLI/control errors, prefer the
+  response `message` over `error`. Fastify's `error` field may only contain a generic
+  HTTP status such as "Internal Server Error", while `message` carries the actionable
+  runtime failure.

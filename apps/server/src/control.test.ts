@@ -17,8 +17,12 @@ class FakeRuntime implements RuntimeManager {
   readonly terminalInputs: string[] = [];
   readonly resolutions: Array<{ requestId: string | number; value: unknown }> = [];
   readonly passwords = new Map<string, string>();
+  createError: Error | undefined;
   setHostPassword(hostId: string, password?: string) { if (password) this.passwords.set(hostId, password); else this.passwords.delete(hostId); }
-  async create() { return "codex-thread"; }
+  async create() {
+    if (this.createError) throw this.createError;
+    return "codex-thread";
+  }
   async resume() {}
   async reconnect() {}
   async exit() {}
@@ -106,6 +110,23 @@ describe("local control server", () => {
 
     const plainHttp = await app!.inject({ method: "GET", url: "/api/hosts" });
     expect(plainHttp.statusCode).toBe(401);
+  });
+
+  it("preserves the specific runtime error message returned by Fastify", async () => {
+    const { socketPath, runtime } = await setup();
+    const host = {
+      id: "host", name: "A", hostname: "a", port: 22, username: "codex",
+      hostKeySha256: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", identityFile: "",
+    };
+    expect(await request(socketPath, "host.upsert", host)).toMatchObject({ ok: true });
+    runtime.createError = new Error("Remote program not found: codex");
+
+    await expect(controlRequest(socketPath, "thread.create", { hostId: "host", cwd: "/work" })).rejects.toMatchObject({
+      controlError: {
+        code: "RUNTIME_FAILURE",
+        message: "Remote program not found: codex",
+      },
+    });
   });
 
   it("requires explicit acceptance for an unknown host key, persists it, and rejects a change", async () => {
