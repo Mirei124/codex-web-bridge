@@ -187,6 +187,9 @@ describe("dashboard security and operations", () => {
       expect(paths).toContainEqual(["/api/threads/t/interrupt", "POST"]);
       expect(paths).toContainEqual(["/api/threads/t/exit", "POST"]);
     });
+    const exitInit = fetch.mock.calls.find(call => call[0] === "/api/threads/t/exit")?.[1] as RequestInit;
+    expect(exitInit.body).toBeUndefined();
+    expect(exitInit.headers).not.toHaveProperty("content-type");
     const resumeButton = screen.getByRole("button", { name: "恢复会话" });
     expect(resumeButton).toBeEnabled();
     expect(screen.getByPlaceholderText("该会话已退出")).toBeDisabled();

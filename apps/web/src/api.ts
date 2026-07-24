@@ -20,7 +20,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: "same-origin",
     ...init,
-    headers: { "content-type": "application/json", ...(init?.method && init.method !== "GET" && csrfToken ? { "x-csrf-token": csrfToken } : {}), ...init?.headers },
+    headers: { ...(init?.body != null ? { "content-type": "application/json" } : {}), ...(init?.method && init.method !== "GET" && csrfToken ? { "x-csrf-token": csrfToken } : {}), ...init?.headers },
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { message?: string; error?: string; code?: string; details?: unknown };

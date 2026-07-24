@@ -55,3 +55,7 @@
   per-command shell marker instead of relying exclusively on the SSH channel's
   optional `exit-status`. Keep the marker out of returned stderr so callers retain
   normal command semantics.
+- Web requests with an empty body must not send `Content-Type: application/json`;
+  Fastify rejects empty JSON bodies before lifecycle handlers such as exit, delete,
+  resume, interrupt, and logout can run. Add the JSON content type only when a body
+  is present.
