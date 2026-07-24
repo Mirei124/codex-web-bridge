@@ -1,6 +1,6 @@
 import type {
   CodexThreadSummary, CreateThreadRequest, HostConfig, HostSummary, LoginRequest, ResolveRequest, ResumeThreadRequest, SessionResponse,
-  SendMessageRequest, SettingsResponse, ThreadDetail, ThreadSummary, UpdateSettingsRequest,
+  SendMessageRequest, SettingsResponse, ThreadCreateDefaults, ThreadDetail, ThreadSummary, UpdateSettingsRequest,
 } from "@cwb/protocol";
 import { apiRoutes } from "@cwb/protocol";
 
@@ -38,6 +38,8 @@ export const api = {
   saveHost: (body: HostConfig) => request<{ id: string }>(apiRoutes.hosts, { method: "POST", body: JSON.stringify(body) }),
   codexThreads: (hostId: string) => request<CodexThreadSummary[]>(apiRoutes.hostCodexThreads(hostId)),
   threads: () => request<ThreadSummary[]>(apiRoutes.threads),
+  threadCreateDefaults: () => request<ThreadCreateDefaults | null>(apiRoutes.threadCreateDefaults),
+  saveThreadCreateDefaults: (body: ThreadCreateDefaults) => request<void>(apiRoutes.threadCreateDefaults, { method: "PUT", body: JSON.stringify(body) }),
   thread: (id: string) => request<ThreadDetail>(`${apiRoutes.threads}/${encodeURIComponent(id)}`),
   deleteThread: (id: string) => request<void>(`${apiRoutes.threads}/${encodeURIComponent(id)}`, { method: "DELETE" }),
   createThread: (body: CreateThreadRequest) => request<ThreadDetail>(apiRoutes.threads, { method: "POST", body: JSON.stringify(body) }),

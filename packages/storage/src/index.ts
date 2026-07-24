@@ -25,6 +25,7 @@ export interface HostRecord { id: string; name: string; hostname: string; port: 
 export interface ThreadRecord { id: string; hostId: string; codexThreadId?: string; tmuxSession: string; remotePort?: number; workingDirectory: string; proxy?: string; prependPath?: string; title: string; status: string; createdAt: number; updatedAt: number }
 export interface MessageRecord { id: string; threadId: string; role: string; text: string; streaming: number; createdAt: number }
 export interface PendingRecord { id: string; threadId: string; payload: string; rpcId: string; method: string; params: string; resolvedAt?: number; createdAt: number }
+export interface ThreadCreateDefaultsRecord { hostId: string; cwd: string; proxy?: string; prependPath?: string }
 
 export class Storage {
   readonly db: DatabaseConnection;
@@ -60,6 +61,10 @@ export class Storage {
       CREATE TABLE IF NOT EXISTS pending_requests (
         id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
         payload TEXT NOT NULL, rpc_id TEXT NOT NULL DEFAULT 'null', method TEXT NOT NULL DEFAULT '', params TEXT NOT NULL DEFAULT '{}', resolved_at INTEGER, created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS thread_create_defaults (
+        singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+        host_id TEXT NOT NULL, cwd TEXT NOT NULL, proxy TEXT, prepend_path TEXT
       );
     `);
     const hostColumns = this.db.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
@@ -104,5 +109,7 @@ export class Storage {
   putPending(request: PendingRecord): void { this.db.prepare("INSERT INTO pending_requests(id,thread_id,payload,rpc_id,method,params,resolved_at,created_at) VALUES(@id,@threadId,@payload,@rpcId,@method,@params,@resolvedAt,@createdAt)").run({ ...request, resolvedAt: request.resolvedAt ?? null }); }
   resolvePending(id: string, threadId: string, now = Date.now()): boolean { return this.db.prepare("UPDATE pending_requests SET resolved_at=? WHERE id=? AND thread_id=? AND resolved_at IS NULL").run(now,id,threadId).changes === 1; }
   resolveAllPending(threadId:string,now=Date.now()):string[]{const ids=(this.db.prepare("SELECT id FROM pending_requests WHERE thread_id=? AND resolved_at IS NULL").all(threadId) as Array<{id:string}>).map(row=>row.id);if(ids.length)this.db.prepare("UPDATE pending_requests SET resolved_at=? WHERE thread_id=? AND resolved_at IS NULL").run(now,threadId);return ids;}
+  threadCreateDefaults():ThreadCreateDefaultsRecord|undefined{const value=this.db.prepare("SELECT host_id AS hostId,cwd,proxy,prepend_path AS prependPath FROM thread_create_defaults WHERE singleton=1").get() as {hostId:string;cwd:string;proxy:string|null;prependPath:string|null}|undefined;return value?{hostId:value.hostId,cwd:value.cwd,...(value.proxy?{proxy:value.proxy}:{}),...(value.prependPath?{prependPath:value.prependPath}:{})}:undefined;}
+  saveThreadCreateDefaults(value:ThreadCreateDefaultsRecord):void{this.db.prepare("INSERT INTO thread_create_defaults(singleton,host_id,cwd,proxy,prepend_path) VALUES(1,@hostId,@cwd,@proxy,@prependPath) ON CONFLICT(singleton) DO UPDATE SET host_id=excluded.host_id,cwd=excluded.cwd,proxy=excluded.proxy,prepend_path=excluded.prepend_path").run({...value,proxy:value.proxy??null,prependPath:value.prependPath??null});}
   close(): void { this.db.close(); }
 }

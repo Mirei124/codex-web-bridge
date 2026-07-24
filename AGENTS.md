@@ -62,3 +62,6 @@
 - Fresh Codex threads may remain headless until terminal functionality is requested.
   Screenshot, takeover, and terminal input paths must prepare the viewer pane and
   terminal stream on demand before capturing or accepting input.
+- Persist Web create-thread form defaults on the server, not in browser-local
+  storage. Load them only for the create flow, keep resume discovery independent,
+  and fall back to an available host if the remembered host was removed.

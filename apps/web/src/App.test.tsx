@@ -73,15 +73,17 @@ describe("dashboard security and operations", () => {
       .mockResolvedValueOnce(response({ authenticated: true, csrfToken: "from-login" }))
       .mockResolvedValueOnce(response([{ id: "a", name: "Machine A", address: "host", status: "online" }]))
       .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response(null))
+      .mockResolvedValueOnce(response(undefined,204))
       .mockResolvedValueOnce(response({ ...thread, id: "created" }));
     vi.stubGlobal("fetch", fetch); render(<App />);
     fireEvent.change(await screen.findByLabelText("密码"), { target: { value: "secret" } });
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
     fireEvent.click(await screen.findByRole("button", { name: /新会话/ }));
     fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "/repo" } });
-    fireEvent.click(within(screen.getByRole("heading", { name: "创建会话" }).parentElement!).getByRole("button", { name: "创建" }));
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(5));
-    const mutation = fetch.mock.calls[4]![1] as RequestInit;
+    fireEvent.click(await within(screen.getByRole("heading", { name: "创建会话" }).parentElement!).findByRole("button", { name: "创建" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
+    const mutation = fetch.mock.calls[5]![1] as RequestInit;
     expect(new Headers(mutation.headers).get("x-csrf-token")).toBe("from-login");
   });
 
@@ -91,7 +93,7 @@ describe("dashboard security and operations", () => {
     fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "/repo/new" } });
     fireEvent.change(screen.getByLabelText("代理地址（可选）"), { target: { value: "http://proxy.example:7890" } });
     fireEvent.change(screen.getByLabelText(/^会话前置 PATH/), { target: { value: "/thread/bin:/opt/bin" } });
-    fireEvent.click(within(screen.getByRole("heading", { name: "创建会话" }).parentElement!).getByRole("button", { name: "创建" }));
+    fireEvent.click(await within(screen.getByRole("heading", { name: "创建会话" }).parentElement!).findByRole("button", { name: "创建" }));
     expect(await screen.findByRole("heading", { name: "Created" })).toBeInTheDocument();
     const create = fetch.mock.calls.find(call => call[0] === "/api/threads" && (call[1] as RequestInit | undefined)?.method === "POST")![1] as RequestInit;
     expect(JSON.parse(String(create.body))).toEqual({ hostId: "a", cwd: "/repo/new", proxy: "http://proxy.example:7890", prependPath:"/thread/bin:/opt/bin" });
@@ -105,6 +107,26 @@ describe("dashboard security and operations", () => {
     expect(fetch).toHaveBeenCalledWith("/api/threads/resume", expect.objectContaining({ method: "POST" }));
     const resume = fetch.mock.calls.find(call => call[0] === "/api/threads/resume")![1] as RequestInit;
     expect(JSON.parse(String(resume.body))).toEqual({ hostId: "a", codexThreadId: "codex-123", cwd: "/repo/resumed", proxy: "https://proxy.example:8443", prependPath:"/resume/bin" });
+  });
+
+  it("loads and saves backend defaults for the create-thread form", async () => {
+    const baseFetch=authenticatedFetch();
+    const fetch=vi.fn((input:string|URL|Request,init?:RequestInit)=>{
+      const path=typeof input==="string"?input:input.toString();
+      if(path==="/api/preferences/thread-create"&&!init?.method)return Promise.resolve(response({hostId:"a",cwd:"/remembered",proxy:"http://proxy:8080",prependPath:"/custom/bin"}));
+      if(path==="/api/preferences/thread-create"&&init?.method==="PUT")return Promise.resolve(response(undefined,204));
+      return baseFetch(input,init);
+    });
+    vi.stubGlobal("fetch",fetch);render(<App />);
+    fireEvent.click(await screen.findByRole("button",{name:/新会话/}));
+    expect(await screen.findByDisplayValue("/remembered")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("http://proxy:8080")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("/custom/bin")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button",{name:"创建"}));
+    await waitFor(()=>expect(fetch).toHaveBeenCalledWith("/api/preferences/thread-create",expect.objectContaining({
+      method:"PUT",
+      body:JSON.stringify({hostId:"a",cwd:"/remembered",proxy:"http://proxy:8080",prependPath:"/custom/bin"}),
+    })));
   });
 
   it("confirms a scanned fingerprint before adding a host with optional metadata", async () => {

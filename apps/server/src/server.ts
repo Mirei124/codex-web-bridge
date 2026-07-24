@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import cookie from "@fastify/cookie";
 import { WebSocketServer, WebSocket } from "ws";
-import { apiRoutes, serverEventThreadId, type PendingRequest, type ServerEvent, type SettingsResponse, type ThreadDetail, type ThreadSummary, type UpdateSettingsRequest } from "@cwb/protocol";
+import { apiRoutes, serverEventThreadId, type PendingRequest, type ServerEvent, type SettingsResponse, type ThreadCreateDefaults, type ThreadDetail, type ThreadSummary, type UpdateSettingsRequest } from "@cwb/protocol";
 import { parseConfig, paths, saveConfig, type AppConfig } from "@cwb/config";
 import { Storage, type HostRecord, type SessionRecord, type ThreadRecord } from "@cwb/storage";
 import { hashPassword, sameToken, token, verifyPassword } from "./auth.js";
@@ -93,6 +93,8 @@ export async function buildServer(config: AppConfig, storage: Storage, options: 
 
   app.get(apiRoutes.session, async request => ({ authenticated: true, csrfToken: request.loginSession!.csrfToken }));
   app.get(apiRoutes.settings, async ():Promise<SettingsResponse> => ({ bindHost:savedConfig.bindHost,port:savedConfig.port,publicOrigin:savedConfig.publicOrigin,dataDir:paths().root,restartRequired:JSON.stringify(savedConfig)!==JSON.stringify(config) }));
+  app.get(apiRoutes.threadCreateDefaults,async()=>storage.threadCreateDefaults()??null);
+  app.put<{Body:ThreadCreateDefaults}>(apiRoutes.threadCreateDefaults,async(request,reply)=>{const value=request.body,host=value&&storage.host(value.hostId),proxy=value&&normalizedProxy(value.proxy),prependPath=value?.prependPath?.trim()||undefined;if(!value||!host||typeof value.cwd!=="string"||!isAbsolute(value.cwd)||proxy===null||(prependPath&&!validPrependPath(prependPath)))return reply.code(400).send({error:"invalid thread creation defaults"});storage.saveThreadCreateDefaults({hostId:host.id,cwd:value.cwd,proxy,prependPath});return reply.code(204).send();});
   app.put<{Body:UpdateSettingsRequest}>(apiRoutes.settings,async(request,reply)=>{
     const value=request.body;
     if(!value||!["127.0.0.1","0.0.0.0"].includes(value.bindHost)||!Number.isInteger(value.port)||value.port<1||value.port>65535||typeof value.publicOrigin!=="string"||(value.newPassword!==undefined&&(typeof value.newPassword!=="string"||value.newPassword.length<12)))return reply.code(400).send({error:"invalid settings"});

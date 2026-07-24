@@ -124,6 +124,7 @@ export interface UpdateSettingsRequest {
   newPassword?: string;
 }
 export interface CreateThreadRequest { hostId: string; cwd: string; proxy?: string; prependPath?: string }
+export type ThreadCreateDefaults = CreateThreadRequest;
 export interface ResumeThreadRequest { hostId: string; codexThreadId: string; cwd: string; proxy?: string; prependPath?: string }
 export interface SendMessageRequest { text: string }
 export interface ResolveRequest {
@@ -201,6 +202,7 @@ export const apiRoutes = {
   hosts: "/api/hosts",
   settings: "/api/settings",
   threads: "/api/threads",
+  threadCreateDefaults: "/api/preferences/thread-create",
   resumeThread: "/api/threads/resume",
   resumeExitedThread: (threadId: string) => `/api/threads/${encodeURIComponent(threadId)}/resume`,
   events: "/api/events",
