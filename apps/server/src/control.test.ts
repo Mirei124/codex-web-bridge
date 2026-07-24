@@ -296,7 +296,7 @@ describe("local control server", () => {
   it("keeps one CLI lease across short-lived connections and releases it explicitly", async () => {
     const { socketPath, runtime } = await setup();
     storage!.upsertHost({ id: "host", name: "A", hostname: "a", port: 22, username: "codex", hostKeySha256: "key", identityFile: "/key", createdAt: 1 });
-    storage!.createThread({ id: "thread", hostId: "host", codexThreadId: "codex", tmuxSession: "tmux", remotePort: 20000, workingDirectory: "/work", title: "Thread", status: "idle", createdAt: 1, updatedAt: 1 });
+    storage!.createThread({ id: "thread", hostId: "host", codexThreadId: "codex", tmuxSession: "tmux", remotePort: 20000, workingDirectory: "/work", title: "Thread", status: "idle", hasRollout: 1, createdAt: 1, updatedAt: 1 });
 
     expect(await request(socketPath, "terminal.input", { threadId: "thread", data: "blocked" }))
       .toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });

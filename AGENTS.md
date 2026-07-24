@@ -77,3 +77,6 @@
 - Daemon shutdown first allows five seconds for graceful `SIGTERM` cleanup, then
   escalates the already validated daemon PID to `SIGKILL`. Keep restart, password
   changes, and explicit stop on this same shutdown path.
+- A Codex `thread/start` ID has no resumable rollout until its first accepted turn.
+  Persist rollout availability and do not launch the terminal viewer with
+  `codex resume` for a fresh empty thread.
