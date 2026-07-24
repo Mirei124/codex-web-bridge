@@ -36,8 +36,20 @@ function isAllowedRequest(request: FastifyRequest, config: AppConfig): boolean {
 }
 function isAllowedOrigin(origin: string | undefined, host: string | undefined, config: AppConfig, direct: boolean): boolean {
   if (origin === undefined || origin === config.publicOrigin) return true;
+  if (direct && host !== undefined && isLoopbackOrigin(origin, host, config.port)) return true;
   const dynamicHttpOrigin = config.bindHost === "0.0.0.0" && config.publicOrigin === `http://127.0.0.1:${config.port}`;
   return direct && dynamicHttpOrigin && host !== undefined && origin === `http://${host}`;
+}
+function isLoopbackOrigin(origin: string, host: string, port: number): boolean {
+  try {
+    const url = new URL(origin);
+    return url.protocol === "http:"
+      && url.host === host
+      && Number(url.port || 80) === port
+      && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch {
+    return false;
+  }
 }
 function summary(thread: ThreadRecord): ThreadSummary { return { id: thread.id, codexThreadId: thread.codexThreadId, hostId: thread.hostId, title: thread.title, cwd: thread.workingDirectory, status: thread.status as ThreadSummary["status"], updatedAt: new Date(thread.updatedAt).toISOString() }; }
 function detail(storage: Storage, thread: ThreadRecord): ThreadDetail { return { ...summary(thread), messages: storage.messages(thread.id).map(m => ({ id: m.id, role: m.role as "user"|"assistant"|"system", text: m.text, streaming: Boolean(m.streaming), createdAt: new Date(m.createdAt).toISOString() })), pendingRequests: storage.pending(thread.id).map(p => JSON.parse(p.payload) as PendingRequest), terminal: { connected: thread.status !== "exited", takeover: false } }; }

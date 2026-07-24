@@ -19,6 +19,16 @@ describe("HTTP boundary", () => {
     expect(spoofed.statusCode).toBe(404);
     expect(spoofed.body).toBe("");
   });
+  it("accepts equivalent localhost and IPv4 loopback origins on the configured port", async () => {
+    storage = new Storage(":memory:");
+    app = await buildServer({ version: 1, bindHost: "127.0.0.1", port: 3210, publicOrigin: "http://localhost:3210", passwordHash: await hashPassword("correct horse battery staple"), sessionSecret: "x".repeat(32), trustedProxy: "127.0.0.1" }, storage);
+    const loopback = await app.inject({ method: "POST", url: "/api/auth/login", headers: { host: "127.0.0.1:3210", origin: "http://127.0.0.1:3210" }, payload: { password: "correct horse battery staple" } });
+    expect(loopback.statusCode).toBe(200);
+    const wrongPort = await app.inject({ method: "POST", url: "/api/auth/login", headers: { host: "127.0.0.1:9999", origin: "http://127.0.0.1:9999" }, payload: { password: "correct horse battery staple" } });
+    expect(wrongPort.statusCode).toBe(403);
+    const nonLoopback = await app.inject({ method: "POST", url: "/api/auth/login", headers: { host: "bridge.attacker.test:3210", origin: "http://bridge.attacker.test:3210" }, payload: { password: "correct horse battery staple" } });
+    expect(nonLoopback.statusCode).toBe(403);
+  });
   it("accepts the browser's actual HTTP origin only in all-interface danger mode", async () => {
     storage = new Storage(":memory:");
     app = await buildServer({ version: 1, bindHost: "0.0.0.0", port: 3210, publicOrigin: "http://127.0.0.1:3210", passwordHash: await hashPassword("correct horse battery staple"), sessionSecret: "x".repeat(32), trustedProxy: "127.0.0.1" }, storage);
