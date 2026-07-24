@@ -185,6 +185,11 @@ export class TmuxCodexRuntime {
   }
   async sendKeys(session: RemoteSession, bytes: string): Promise<void> {
     if (!session.viewerPane) throw new Error("Viewer pane has not been attached");
+    const controlKey = bytes.length === 1 ? tmuxControlKey(bytes.charCodeAt(0)) : undefined;
+    if (controlKey) {
+      await this.must(this.resolvedTmux ?? this.tmux, ["send-keys", "-t", session.viewerPane, controlKey]);
+      return;
+    }
     // tmux set-buffer/paste-buffer preserves arbitrary user text as one argument.
     await this.must(this.resolvedTmux ?? this.tmux, ["set-buffer", "-b", "cwb-input", bytes]);
     await this.must(this.resolvedTmux ?? this.tmux, ["paste-buffer", "-b", "cwb-input", "-d", "-t", session.viewerPane]);
@@ -224,6 +229,19 @@ export class TmuxCodexRuntime {
 }
 function validateName(name: string): void { if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) throw new Error("Invalid tmux session name"); }
 function validatePort(port: number): void { if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid app-server port"); }
+function tmuxControlKey(code:number):string|undefined{
+  if(code===0)return"C-@";
+  if(code===8)return"BSpace";
+  if(code===9)return"Tab";
+  if(code===13)return"Enter";
+  if(code>=1&&code<=26)return`C-${String.fromCharCode(96+code)}`;
+  if(code===27)return"Escape";
+  if(code===28)return"C-\\";
+  if(code===29)return"C-]";
+  if(code===30)return"C-^";
+  if(code===31)return"C-_";
+  if(code===127)return"BSpace";
+}
 function proxiedCommand(program: string, args: string[], proxy?: string): string {
   if (!proxy) return commandLine(program, args);
   const variables = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"].map(name => `${name}=${proxy}`);

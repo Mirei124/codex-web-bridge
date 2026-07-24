@@ -67,6 +67,10 @@
   and fall back to an available host if the remembered host was removed.
 - Normalize xterm's standalone DEL byte (`0x7f`) to terminal Backspace (`0x08`) at
   the Web input boundary before forwarding it through tmux.
+- Send standalone C0 control bytes from terminal input through tmux `send-keys`
+  semantics (for example Ctrl-C, Ctrl-D, Enter, Tab, Escape, and Backspace).
+  Preserve multi-byte ANSI sequences and ordinary text as one raw buffer so arrow,
+  navigation, function, and Alt-key sequences are never split across SSH calls.
 - Start bridge-managed Codex app-server and viewer processes with the invocation
   override `-c check_for_update_on_startup=false`; do not mutate the remote user's
   global Codex configuration merely to suppress bridge terminal upgrade prompts.
