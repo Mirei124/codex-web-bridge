@@ -31,6 +31,9 @@
 - Deleting a bridge thread is different from exiting its remote session. Detach the
   local runtime before deleting the database record, but leave the remote tmux
   session and Codex history untouched.
+- Keep logical deletion independent from slow network cleanup. Mark the runtime
+  detached synchronously and remove the bridge record immediately, then finish SSH
+  and forwarding cleanup in the background.
 - Persist daemon settings changed through the running server and report that a
   restart is required. Do not make an HTTP request handler stop and replace its own
   daemon process.

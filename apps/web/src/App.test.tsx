@@ -210,14 +210,21 @@ describe("dashboard security and operations", () => {
   });
 
   it("deletes a thread from the sidebar without deleting Codex history", async () => {
-    const fetch = authenticatedFetch(); vi.stubGlobal("fetch", fetch); vi.stubGlobal("confirm", vi.fn(() => true));
+    const baseFetch = authenticatedFetch(); let finishDelete!: () => void;
+    const pendingDelete = new Promise<Response>(resolve => { finishDelete = () => resolve(response(undefined, 204)); });
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const path = typeof input === "string" ? input : input.toString();
+      return path === "/api/threads/t" && init?.method === "DELETE" ? pendingDelete : baseFetch(input, init);
+    });
+    vi.stubGlobal("fetch", fetch); vi.stubGlobal("confirm", vi.fn(() => true));
     render(<App />);
     const remove = await screen.findByRole("button", { name: "删除会话 Bridge" });
     expect(remove.closest("button")?.parentElement?.tagName).not.toBe("BUTTON");
     fireEvent.click(remove);
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/threads/t", expect.objectContaining({ method: "DELETE" })));
     expect(screen.queryByText("Bridge")).not.toBeInTheDocument();
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/threads/t", expect.objectContaining({ method: "DELETE" })));
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Codex 自身的会话记录不会被删除"));
+    finishDelete();
   });
 
   it("removes a selected thread when the server emits thread.deleted", async () => {

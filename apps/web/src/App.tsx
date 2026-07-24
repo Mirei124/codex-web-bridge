@@ -123,8 +123,10 @@ export default function App() {
   async function resumeSelected() { if (!selected || resuming) return; setResuming(true); setOperationError(""); try { const resumed = await api.resumeExitedThread(selected.id); setSelected(resumed); setThreads(old => old.map(thread => thread.id === resumed.id ? resumed : thread)); } catch (error) { setOperationError(error instanceof Error ? error.message : "恢复会话失败"); } finally { setResuming(false); } }
   async function deleteThread(thread: ThreadSummary) {
     if (!confirm(`从 CWB 中删除会话“${thread.title}”？Codex 自身的会话记录不会被删除。`)) return;
-    try { await api.deleteThread(thread.id); setThreads(old => old.filter(item => item.id !== thread.id)); setSelected(old => old?.id === thread.id ? undefined : old); }
-    catch (error) { setOperationError(error instanceof Error ? error.message : "删除会话失败"); }
+    const previousThreads = threads; const previousSelected = selected;
+    setThreads(old => old.filter(item => item.id !== thread.id)); setSelected(old => old?.id === thread.id ? undefined : old);
+    try { await api.deleteThread(thread.id); }
+    catch (error) { setThreads(previousThreads); setSelected(previousSelected); setOperationError(error instanceof Error ? error.message : "删除会话失败"); }
   }
   const terminalInput = useCallback((data: string) => { if (selected?.terminal.takeover) void api.terminalInput(selected.id, data); }, [selected]);
   if (authenticated === undefined) return <main className="center">正在建立安全会话…</main>;
