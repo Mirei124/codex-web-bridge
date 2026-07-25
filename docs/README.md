@@ -15,6 +15,7 @@ It does not try to track implementation detail.
 
 - [Architecture](./architecture.md)
 - [Engineering Conventions](./engineering-conventions.md)
+- [Source Map](./source-map.md)
 
 ## Source of Truth
 

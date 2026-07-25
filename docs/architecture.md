@@ -20,6 +20,9 @@ Daemon -> SSH -> tmux -> codex app-server
 
 ## Code Organization
 
+For a task-oriented map from symptoms or feature areas to source files, see
+[Source Map](./source-map.md).
+
 ### `apps/server`
 
 Owns the daemon and coordination layer:
