@@ -35,6 +35,8 @@ describe("CLI human renderer", () => {
       .toBe("Thread thread-1 interrupted.");
     expect(renderHuman({}, { method: "thread.delete", params: { threadId: "thread-1" } }))
       .toBe("Thread thread-1 deleted from Codex Web Bridge.");
+    expect(renderHuman({}, { method: "host.delete", params: { hostId: "machine-a" } }))
+      .toBe("Host machine-a deleted.");
     expect(renderHuman({ path: "/tmp/pane.png" }, { method: "terminal.screenshot", params: { threadId: "thread-1" } }))
       .toBe("Screenshot saved to /tmp/pane.png.");
   });

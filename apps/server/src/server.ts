@@ -155,6 +155,14 @@ export async function buildServer(config: AppConfig, storage: Storage, options: 
     storage.upsertHost(host);
     return reply.code(201).send({ id: host.id });
   });
+  app.delete<{ Params:{id:string} }>(`${apiRoutes.hosts}/:id`,async(request,reply)=>{
+    const host=storage.host(request.params.id);
+    if(!host)return reply.code(404).send({error:"host not found"});
+    if(storage.threads().some(thread=>thread.hostId===host.id))return reply.code(409).send({error:"delete the host's CWB threads first"});
+    runtime.setHostPassword?.(host.id,undefined);
+    storage.deleteHost(host.id);
+    return reply.code(204).send();
+  });
   app.get(apiRoutes.threads, async () => storage.threads().map(summary));
   app.get<{ Params:{ id:string } }>(`${apiRoutes.threads}/:id`, async (request, reply) => { const thread=storage.thread(request.params.id);if(!thread)return reply.code(404).send({error:"not found"});const result=detail(storage,thread),lease=activeLease(thread.id),owner=lease?.owner;result.terminal={...result.terminal,takeover:Boolean(owner),owner:owner===request.loginSession!.id?"you":owner?"another session":undefined};return result; });
   app.post<{ Body:{hostId:string;cwd:string;proxy?:string;prependPath?:string} }>(apiRoutes.threads, async (request, reply) => {

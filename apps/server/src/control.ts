@@ -176,6 +176,7 @@ export class ControlServer {
       delete host.acceptHostKey;
       return this.inject(state, "POST", apiRoutes.hosts, { ...host, hostKeySha256: verified.fingerprint, acceptHostKey: true });
     }
+    if (method === "host.delete") return this.inject(state,"DELETE",`${apiRoutes.hosts}/${encodeURIComponent(idParam(params))}`);
     if (method === "host.codexThreads") return this.inject(state, "GET", apiRoutes.hostCodexThreads(idParam(params)));
     if (method === "thread.list") return this.inject(state, "GET", apiRoutes.threads);
     if (method === "thread.get") return this.thread(state, idParam(params));

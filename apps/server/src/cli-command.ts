@@ -20,6 +20,7 @@ const usage = `Usage:
 
   codex-web-bridge host list
   codex-web-bridge host get HOST_ID
+  codex-web-bridge host delete HOST_ID
   codex-web-bridge host codex-threads HOST_ID
   codex-web-bridge host add USER@HOST[:PORT] [--id ID] [--name NAME]
     [--identity-file ABSOLUTE_PATH] [--prepend-path PATH_VALUE] [--password|--password-stdin|--clear-password] [--accept-host-key]
@@ -66,11 +67,13 @@ Restart the daemon. Remote tmux sessions remain running.`,
   host: `Usage:
   codex-web-bridge host list
   codex-web-bridge host get HOST_ID
+  codex-web-bridge host delete HOST_ID
   codex-web-bridge host codex-threads HOST_ID
   codex-web-bridge host add USER@HOST[:PORT] [OPTIONS]
   codex-web-bridge host upsert [OPTIONS]`,
   "host list": "Usage: codex-web-bridge host list [--json]\n\nList configured SSH hosts.",
   "host get": "Usage: codex-web-bridge host get HOST_ID [--json]\n\nShow one configured SSH host.",
+  "host delete": "Usage: codex-web-bridge host delete HOST_ID [--json]\n\nDelete a host after its CWB threads have been removed.",
   "host codex-threads": "Usage: codex-web-bridge host codex-threads HOST_ID [--json]\n\nList Codex threads discovered on a host.",
   "host add": `Usage: codex-web-bridge host add USER@HOST[:PORT] [--id ID] [--name NAME]
   [--identity-file ABSOLUTE_PATH] [--prepend-path PATH_VALUE] [--password|--password-stdin|--clear-password]
@@ -209,6 +212,7 @@ export function parseBusinessCommand(argv: string[]): ParsedCommand {
   if (group === "host") {
     if (action === "list") { none(positional); return finish({ method: "host.list", params: {}, stream: false }, options, json); }
     if (action === "get") return finish({ method: "host.get", params: { hostId: one(positional, "host ID") }, stream: false }, options, json);
+    if (action === "delete") return finish({ method: "host.delete", params: { hostId: one(positional, "host ID") }, stream: false }, options, json);
     if (action === "codex-threads") return finish({ method: "host.codexThreads", params: { hostId: one(positional, "host ID") }, stream: false }, options, json);
     if (action === "add" || action === "upsert") {
       const target = action === "add" ? one(positional, "user@hostname[:port] target") : (none(positional), undefined);

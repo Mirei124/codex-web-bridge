@@ -49,6 +49,7 @@ describe("LLM-oriented CLI command parsing", () => {
   it.each([
     [["host", "list"], "host.list", {}],
     [["host", "get", "machine-a"], "host.get", { hostId: "machine-a" }],
+    [["host", "delete", "machine-a"], "host.delete", { hostId: "machine-a" }],
     [["host", "codex-threads", "machine-a"], "host.codexThreads", { hostId: "machine-a" }],
     [["thread", "list"], "thread.list", {}],
     [["thread", "get", "thread-1"], "thread.get", { threadId: "thread-1" }],

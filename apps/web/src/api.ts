@@ -36,6 +36,7 @@ export const api = {
   logout: async () => { await request<void>(apiRoutes.logout, { method: "POST" }); csrfToken = undefined; window.dispatchEvent(new Event("cwb-auth-changed")); },
   hosts: () => request<HostSummary[]>(apiRoutes.hosts),
   saveHost: (body: HostConfig) => request<{ id: string }>(apiRoutes.hosts, { method: "POST", body: JSON.stringify(body) }),
+  deleteHost: (id: string) => request<void>(`${apiRoutes.hosts}/${encodeURIComponent(id)}`, { method: "DELETE" }),
   codexThreads: (hostId: string) => request<CodexThreadSummary[]>(apiRoutes.hostCodexThreads(hostId)),
   threads: () => request<ThreadSummary[]>(apiRoutes.threads),
   threadCreateDefaults: () => request<ThreadCreateDefaults | null>(apiRoutes.threadCreateDefaults),

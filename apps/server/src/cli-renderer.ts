@@ -92,10 +92,11 @@ function threadDetails(data: Row): string {
 }
 
 function operationResult(method: string | undefined, params: Row | undefined, data: Row): string | undefined {
-  const hostId = scalar(data.id ?? params?.id);
+  const hostId = scalar(data.id ?? params?.id ?? params?.hostId);
   const threadId = scalar(data.id ?? params?.threadId);
   const requestId = scalar(params?.requestId);
   if (method === "host.upsert") return `Host ${hostId} saved.`;
+  if (method === "host.delete") return `Host ${hostId} deleted.`;
   if (method === "thread.exit") return `Thread ${threadId} exited.`;
   if (method === "thread.delete") return `Thread ${threadId} deleted from Codex Web Bridge.`;
   if (method === "thread.interrupt") return `Thread ${threadId} interrupted.`;

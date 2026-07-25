@@ -181,6 +181,16 @@ describe("dashboard security and operations", () => {
     expect(JSON.parse(String((fetch.mock.calls[1]![1] as RequestInit).body))).toMatchObject({ id: "a", prependPath: "", acceptHostKey: true });
   });
 
+  it("confirms and deletes an existing host", async () => {
+    const fetch=vi.fn().mockResolvedValue(response(undefined,204));
+    vi.stubGlobal("fetch",fetch);vi.stubGlobal("confirm",vi.fn(()=>true));
+    const onSaved=vi.fn();
+    render(<HostDialog host={{id:"a",name:"Machine A",address:"codex@a.internal:22",status:"offline",hostname:"a.internal",port:22,username:"codex"}} onClose={()=>undefined} onSaved={onSaved}/>);
+    fireEvent.click(screen.getByRole("button",{name:"删除主机"}));
+    await waitFor(()=>expect(fetch).toHaveBeenCalledWith("/api/hosts/a",expect.objectContaining({method:"DELETE"})));
+    expect(onSaved).toHaveBeenCalled();
+  });
+
   it("discovers host Codex threads and fills thread ID and cwd while retaining manual fields", async () => {
     const fetch = authenticatedFetch(); vi.stubGlobal("fetch", fetch); render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "恢复" }));

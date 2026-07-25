@@ -159,7 +159,7 @@ export type ClientEvent =
   | { type: "terminal.input"; threadId: string; data: string };
 
 export const controlMethods = [
-  "host.list", "host.get", "host.upsert", "host.codexThreads",
+  "host.list", "host.get", "host.upsert", "host.delete", "host.codexThreads",
   "thread.list", "thread.get", "thread.create", "thread.resume", "thread.restore", "thread.exit", "thread.delete",
   "thread.send", "thread.interrupt", "thread.wait", "thread.watch",
   "request.list", "request.get", "request.resolve", "request.approve",
