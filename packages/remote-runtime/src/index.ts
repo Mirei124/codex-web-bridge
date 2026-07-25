@@ -170,6 +170,13 @@ export class TmuxCodexRuntime {
     const start = historyLines > 0 ? String(-historyLines) : "0";
     return (await this.must(this.resolvedTmux ?? this.tmux, ["capture-pane", "-e", "-p", "-J", "-S", start, "-t", session.viewerPane])).stdout;
   }
+  async dimensions(session: RemoteSession): Promise<{ cols: number; rows: number }> {
+    if (!session.viewerPane) throw new Error("Viewer pane has not been attached");
+    const value = (await this.must(this.resolvedTmux ?? this.tmux, ["display-message", "-p", "-t", session.viewerPane, "#{pane_width}\t#{pane_height}"])).stdout.trim().split("\t");
+    const cols = Number(value[0]), rows = Number(value[1]);
+    if (!Number.isInteger(cols) || !Number.isInteger(rows)) throw new Error("tmux returned invalid pane dimensions");
+    return { cols, rows };
+  }
   async terminalStream(session: RemoteSession): Promise<CommandStream> {
     if (!session.viewerPane) throw new Error("Viewer pane has not been attached");
     this.terminalReaders.get(session.name)?.close();
@@ -185,14 +192,15 @@ export class TmuxCodexRuntime {
   }
   async sendKeys(session: RemoteSession, bytes: string): Promise<void> {
     if (!session.viewerPane) throw new Error("Viewer pane has not been attached");
-    const controlKey = bytes.length === 1 ? tmuxControlKey(bytes.charCodeAt(0)) : undefined;
-    if (controlKey) {
-      await this.must(this.resolvedTmux ?? this.tmux, ["send-keys", "-t", session.viewerPane, controlKey]);
+    const key = tmuxTerminalKey(bytes);
+    if (key) {
+      await this.must(this.resolvedTmux ?? this.tmux, ["send-keys", "-t", session.viewerPane, key]);
       return;
     }
     // tmux set-buffer/paste-buffer preserves arbitrary user text as one argument.
-    await this.must(this.resolvedTmux ?? this.tmux, ["set-buffer", "-b", "cwb-input", bytes]);
-    await this.must(this.resolvedTmux ?? this.tmux, ["paste-buffer", "-b", "cwb-input", "-d", "-t", session.viewerPane]);
+    const buffer = `cwb-input-${randomUUID()}`;
+    await this.must(this.resolvedTmux ?? this.tmux, ["set-buffer", "-b", buffer, bytes]);
+    await this.must(this.resolvedTmux ?? this.tmux, ["paste-buffer", "-b", buffer, "-d", "-t", session.viewerPane]);
   }
   private async must(program: string, args: string[], ok = [0]): Promise<CommandResult> { const result = await this.remote.execute(program, args); if (!ok.includes(result.code ?? -1)) throw commandError(result); return result; }
   private async runtimeDirectory(): Promise<string> {
@@ -229,6 +237,14 @@ export class TmuxCodexRuntime {
 }
 function validateName(name: string): void { if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) throw new Error("Invalid tmux session name"); }
 function validatePort(port: number): void { if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid app-server port"); }
+function tmuxTerminalKey(bytes:string):string|undefined{
+  if(bytes.length===1)return tmuxControlKey(bytes.charCodeAt(0));
+  const direct:Record<string,string>={"\x1b[A":"Up","\x1bOA":"Up","\x1b[B":"Down","\x1bOB":"Down","\x1b[C":"Right","\x1bOC":"Right","\x1b[D":"Left","\x1bOD":"Left","\x1b[H":"Home","\x1bOH":"Home","\x1b[1~":"Home","\x1b[7~":"Home","\x1b[F":"End","\x1bOF":"End","\x1b[4~":"End","\x1b[8~":"End","\x1b[2~":"Insert","\x1b[3~":"Delete","\x1b[5~":"PageUp","\x1b[6~":"PageDown","\x1b[Z":"BTab","\x1bOP":"F1","\x1bOQ":"F2","\x1bOR":"F3","\x1bOS":"F4","\x1b[15~":"F5","\x1b[17~":"F6","\x1b[18~":"F7","\x1b[19~":"F8","\x1b[20~":"F9","\x1b[21~":"F10","\x1b[23~":"F11","\x1b[24~":"F12"};
+  if(direct[bytes])return direct[bytes];
+  const modified=bytes.match(/^\x1b\[1;([2-8])([ABCDHF])$/);
+  if(modified){const modifiers:Record<string,string>={"2":"S","3":"M","4":"M-S","5":"C","6":"C-S","7":"C-M","8":"C-M-S"},keys:Record<string,string>={A:"Up",B:"Down",C:"Right",D:"Left",H:"Home",F:"End"};return`${modifiers[modified[1]!]!}-${keys[modified[2]!]!}`;}
+  if(bytes.length===2&&bytes[0]==="\x1b"&&bytes.charCodeAt(1)>=32&&bytes.charCodeAt(1)<127)return`M-${bytes[1]}`;
+}
 function tmuxControlKey(code:number):string|undefined{
   if(code===0)return"C-@";
   if(code===8)return"BSpace";

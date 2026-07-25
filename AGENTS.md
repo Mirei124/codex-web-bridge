@@ -83,3 +83,9 @@
 - Subscribe the dashboard event socket to every listed thread when implementing
   cross-thread completion alerts; a selected-thread-only subscription cannot
   reliably drive unread state or background notifications.
+- Treat xterm escape sequences for navigation/function keys as tmux key names,
+  not pasted bytes. Use a unique tmux paste buffer per text input because
+  `paste-buffer -d` deletes the buffer and concurrent inputs otherwise race.
+- Headless canvas does not reliably resolve the CSS generic `monospace` family.
+  Choose an installed concrete monospace/CJK font and render screenshots at the
+  actual tmux pane dimensions.

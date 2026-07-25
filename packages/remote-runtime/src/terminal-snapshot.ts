@@ -1,13 +1,22 @@
 import canvas from "@napi-rs/canvas";
 import xtermHeadless from "@xterm/headless";
 
-const { createCanvas } = canvas;
+const { createCanvas, GlobalFonts } = canvas;
 const { Terminal } = xtermHeadless;
 const BG = "#1a1b26";
 const FG = "#c0caf5";
 const CELL_WIDTH = 9;
 const CELL_HEIGHT = 18;
 const PADDING = 8;
+const DEFAULT_FONT_FAMILY = [
+  "FiraCode Nerd Font Mono",
+  "Fira Code",
+  "Noto Sans Mono CJK SC",
+  "Noto Sans Mono",
+  "DejaVu Sans Mono",
+  "Menlo",
+  "Consolas",
+].filter(family => GlobalFonts.has(family)).map(family => `"${family}"`).join(", ") || "sans-serif";
 
 export interface TerminalSnapshotOptions { cols: number; rows: number; fontFamily?: string; fontSize?: number }
 export interface RenderedTerminalSnapshot { png: Buffer; text: string; cols: number; rows: number }
@@ -27,7 +36,7 @@ export class TerminalSnapshotRenderer {
       const image = createCanvas(PADDING * 2 + cols * CELL_WIDTH, PADDING * 2 + rows * CELL_HEIGHT);
       const context = image.getContext("2d");
       context.fillStyle = BG; context.fillRect(0, 0, image.width, image.height);
-      context.textBaseline = "top"; context.font = `${options.fontSize ?? 14}px ${options.fontFamily ?? "monospace"}`;
+      context.textBaseline = "top"; context.font = `${options.fontSize ?? 14}px ${options.fontFamily ?? DEFAULT_FONT_FAMILY}`;
       const lines: string[] = [];
       for (let row = 0; row < rows; row++) {
         const line = terminal.buffer.active.getLine(startY + row); if (!line) { lines.push(""); continue; }
@@ -41,7 +50,7 @@ export class TerminalSnapshotRenderer {
           const x = PADDING + column * CELL_WIDTH, y = PADDING + row * CELL_HEIGHT;
           if (background) { context.fillStyle = background; context.fillRect(x, y, CELL_WIDTH * width, CELL_HEIGHT); }
           const chars = cell.getChars();
-          if (chars && chars !== " ") { context.fillStyle = foreground; context.font = `${cell.isBold() ? "bold " : ""}${options.fontSize ?? 14}px ${options.fontFamily ?? "monospace"}`; context.fillText(chars, x, y + 1); }
+          if (chars && chars !== " ") { context.fillStyle = foreground; context.font = `${cell.isBold() ? "bold " : ""}${options.fontSize ?? 14}px ${options.fontFamily ?? DEFAULT_FONT_FAMILY}`; context.fillText(chars, x, y + 1); }
           column += width;
         }
       }
