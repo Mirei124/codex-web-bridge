@@ -14,8 +14,8 @@ import { rollbackCreatedConfig, terminateSpawnedDaemon } from "./startup-transac
 type DaemonCommand = "start" | "stop" | "restart" | "status" | "dashboard" | "help";
 const rawArgs = process.argv.slice(2);
 
-declare global {
-  var __CWB_STANDALONE__: boolean | undefined;
+function isStandalone(): boolean {
+  return Boolean((process as NodeJS.Process & { pkg?: unknown }).pkg);
 }
 
 function success(
@@ -162,8 +162,7 @@ async function configure(args: string[]): Promise<{
       throw new UsageError("configuration already exists; use 'codex-web-bridge password set NEW_PASSWORD'");
     const port = parsePortOption(option(args, "--port"), config.port);
     const publicOrigin =
-      option(args, "--origin") ??
-      updateDefaultLoopbackOrigin(config.publicOrigin, config.port, port);
+      option(args, "--origin") ?? updateDefaultLoopbackOrigin(config.publicOrigin, config.port, port);
     const generatedPassword = args.includes("--reset-password") ? randomBytes(24).toString("base64url") : undefined;
     const next = parseConfig({
       ...config,
@@ -253,13 +252,13 @@ async function start(args: string[], json: boolean, foreground: boolean, emit = 
     }
     const log = await open(paths().log, "a", 0o600);
     try {
-      const daemonArgs = globalThis.__CWB_STANDALONE__
-        ? ["__daemon"]
-        : [fileURLToPath(new URL("./daemon.js", import.meta.url))];
+      const packaged = Boolean((process as NodeJS.Process & { pkg?: unknown }).pkg);
+      const daemonArgs = isStandalone() ? ["__daemon"] : [fileURLToPath(new URL("./daemon.js", import.meta.url))];
+      const daemonEnv = packaged ? { ...process.env, PKG_EXECPATH: "" } : process.env;
       child = spawn(process.execPath, daemonArgs, {
         detached: true,
         stdio: ["ignore", log.fd, log.fd],
-        env: process.env,
+        env: daemonEnv,
       });
       child.unref();
     } finally {

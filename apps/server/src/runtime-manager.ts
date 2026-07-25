@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { EventEmitter } from "node:events";
 import { randomInt, randomUUID } from "node:crypto";
@@ -115,6 +116,11 @@ export class HostRuntimeManager implements RuntimeManager {
   }
   async create(host: HostRecord, thread: ThreadRecord): Promise<string> {
     this.detached.delete(thread.id);
+    writeDiagnostic("runtime.create.started", {
+      hostId: host.id,
+      threadId: thread.id,
+      remotePort: thread.remotePort,
+    });
     const active = await this.open(host, thread);
     try {
       const created = await active.client.createThread({ cwd: thread.workingDirectory });
@@ -263,10 +269,19 @@ export class HostRuntimeManager implements RuntimeManager {
       session = await runtime.start(thread.tmuxSession, thread.workingDirectory, thread.remotePort, thread.proxy);
       tmuxCreated = !existed;
       await runtime.waitUntilReady(session);
+      writeDiagnostic("runtime.remote.ready", { threadId: thread.id, remotePort: thread.remotePort });
       forward = await ssh.forwardRemotePort(thread.remotePort);
+      writeDiagnostic("runtime.forward.ready", {
+        threadId: thread.id,
+        remotePort: thread.remotePort,
+        localPort: forward.port,
+      });
       client =
         this.options.clientFactory?.(`ws://127.0.0.1:${forward.port}`) ??
-        new CodexClient({ url: `ws://127.0.0.1:${forward.port}` });
+        new CodexClient({
+          url: `ws://127.0.0.1:${forward.port}`,
+          diagnostic: writeDiagnostic,
+        });
       client.on("notification", (payload) =>
         this.events.emit("event", { threadId: thread.id, type: "codex", payload } satisfies RuntimeEvent),
       );
@@ -285,6 +300,12 @@ export class HostRuntimeManager implements RuntimeManager {
         hasRollout: thread.hasRollout !== 0,
       };
     } catch (error) {
+      writeDiagnostic("runtime.open.failed", {
+        hostId: host.id,
+        threadId: thread.id,
+        remotePort: thread.remotePort,
+        error: diagnosticError(error),
+      });
       client?.close();
       await forward?.close().catch(() => undefined);
       if (runtime && session && tmuxCreated) await runtime.stop(session.name).catch(() => undefined);
@@ -418,6 +439,24 @@ export class HostRuntimeManager implements RuntimeManager {
     if (!value) throw new Error("thread runtime is not connected");
     return value;
   }
+}
+
+function writeDiagnostic(event: string, details: Record<string, unknown> = {}): void {
+  const payload = JSON.stringify({
+    timestamp: new Date().toISOString(),
+    pid: process.pid,
+    event,
+    ...details,
+  });
+  try {
+    appendFileSync("/tmp/debug.log", `${payload}\n`, { encoding: "utf8", mode: 0o600 });
+  } catch {
+    // Diagnostics must never change runtime behavior.
+  }
+}
+
+function diagnosticError(error: unknown): string {
+  return error instanceof Error ? (error.stack ?? error.message) : String(error);
 }
 
 export function opensshSha256ToHex(value: string): string {

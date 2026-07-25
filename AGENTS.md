@@ -104,8 +104,10 @@
 - Keep public-IP examples generic in deploy snippets and certificate paths.
   Replace hardcoded production addresses with placeholders so example files do not
   leak environment-specific values or get copied into the wrong deployment.
-- Do not rely on object-form named SQLite parameter binding in storage writes.
-  `better-sqlite3` accepts `.run({ key: value })`, but the Bun-compiled binary's
-  `bun:sqlite` can silently bind those `@name` parameters as `NULL`. Use positional
-  `?` placeholders for inserts and updates that must behave the same in Node and
-  the standalone binary.
+- Build pkg executables from a Node-targeted bundle so workspace TypeScript exports
+  and top-level await do not depend on pkg's CommonJS transformer. Keep native
+  modules external to the bundle and list their resolved `.node` files as pkg
+  assets relative to the pkg config directory.
+- When a pkg executable launches its own daemon, set the child `PKG_EXECPATH` to an
+  empty string. Otherwise pkg treats the first application argument as a JavaScript
+  filename instead of re-entering the packaged default entrypoint.

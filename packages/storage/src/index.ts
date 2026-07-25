@@ -1,4 +1,5 @@
 import { chmodSync } from "node:fs";
+import BetterSqlite3 from "better-sqlite3";
 
 interface Statement {
   run(...params: unknown[]): { changes: number };
@@ -16,9 +17,7 @@ interface DatabaseConstructor {
   new (path: string): DatabaseConnection;
 }
 
-const Database = (
-  process.versions.bun ? (await import("bun:sqlite")).Database : (await import("better-sqlite3")).default
-) as DatabaseConstructor;
+const Database = BetterSqlite3 as unknown as DatabaseConstructor;
 
 export interface SessionRecord {
   id: string;

@@ -25,12 +25,18 @@ class FakeSocket extends EventEmitter {
 describe("CodexClient", () => {
   it("handshakes, starts turns, and answers server requests", async () => {
     const socket = new FakeSocket();
-    const client = new CodexClient({ url: "ws://test", webSocketFactory: () => socket as unknown as WebSocket });
+    const diagnostics: string[] = [];
+    const client = new CodexClient({
+      url: "ws://test",
+      webSocketFactory: () => socket as unknown as WebSocket,
+      diagnostic: (event) => diagnostics.push(event),
+    });
     const connected = client.connect();
     socket.open();
     await Promise.resolve();
     socket.reply(1, {});
     await connected;
+    expect(diagnostics).toEqual(["codex-client.connect.started", "codex-client.connect.succeeded"]);
     expect(socket.sent.slice(0, 2).map((x) => x.method)).toEqual(["initialize", "initialized"]);
     const turn = client.startTurn("t1", "hello");
     socket.reply(2, { turn: { id: "u1" } });

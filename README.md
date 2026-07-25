@@ -68,7 +68,7 @@ pnpm build
 
 ### Standalone binary
 
-Build a self-contained executable with Bun:
+Build a self-contained executable:
 
 ```bash
 pnpm build:binary

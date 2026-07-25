@@ -116,7 +116,7 @@ Start here for:
 
 - data not being saved or loaded correctly
 - migration issues
-- Bun vs Node SQLite differences
+- SQLite driver behavior
 - host/thread record shape mismatches
 
 Important files:
@@ -232,4 +232,4 @@ Usually inspect in this order:
 - treat `dist/` as generated output
 - when behavior differs between Node tests and the standalone binary, inspect both:
   - source logic in `src/`
-  - runtime-specific behavior in dependencies used by the binary build, especially Bun
+  - pkg snapshot and native-addon behavior in the binary build
