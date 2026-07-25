@@ -6,6 +6,7 @@ const root = resolve(import.meta.dirname, "..");
 const webRoot = join(root, "apps", "web", "dist");
 const buildRoot = join(root, ".build");
 const releaseRoot = join(root, "release");
+const bun = join(root, "node_modules", ".bin", process.platform === "win32" ? "bun.exe" : "bun");
 
 async function files(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -61,10 +62,25 @@ const libc =
   process.platform === "linux" ? (process.report.getReport().header.glibcVersionRuntime ? "gnu" : "musl") : undefined;
 const platform = [process.platform, process.arch, libc].filter(Boolean).join("-");
 const output = join(releaseRoot, `codex-web-bridge-${platform}${suffix}`);
-const result = spawnSync("bun", ["build", "--compile", "--minify", entryPath, "--outfile", output], {
-  cwd: root,
-  stdio: "inherit",
-});
+const result = spawnSync(
+  bun,
+  [
+    "build",
+    "--compile",
+    "--minify",
+    "--external",
+    "cpu-features",
+    "--external",
+    "*.node",
+    entryPath,
+    "--outfile",
+    output,
+  ],
+  {
+    cwd: root,
+    stdio: "inherit",
+  },
+);
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
 console.log(`Binary written to ${relative(root, output)}`);
