@@ -1,33 +1,34 @@
 # Documentation Index
 
-This directory is for agents and developers who need a fast, accurate mental model of the repository before making changes.
+This directory is intentionally small and high level.
 
-Read in this order:
+Its job is to help agents and developers orient themselves quickly:
+
+- what the system is
+- where the main code areas are
+- which project constraints are easy to break
+
+It is not the source of truth for implementation details. Read the code for current behavior.
+
+## Read Order
 
 1. [Agent Quickstart](./agent-quickstart.md)
 2. [Architecture](./architecture.md)
 3. [Change Guide](./change-guide.md)
 4. [Engineering Conventions](./engineering-conventions.md)
 
-## What This Documentation Covers
+## Source of Truth
 
-- process and runtime model
-- end-to-end data flow
-- persistence model
-- common change entry points
-- first-read guidance for agents
-- project-specific rules that are easy to break
+Implementation truth lives in:
 
-## Sources of Truth
+- `apps/server/src`
+- `apps/web/src`
+- `packages/remote-runtime/src`
+- `packages/storage/src`
+- `packages/protocol/src`
+- `AGENTS.md`
 
-- Runtime and API behavior: `apps/server/src`
-- Remote orchestration: `packages/remote-runtime/src`
-- Persistence schema: `packages/storage/src`
-- Shared protocol types: `packages/protocol/src`
-- Config and state paths: `packages/config/src`
-- Codex app-server client behavior: `packages/codex-client`
-
-## Read This Alongside
+## Read Alongside
 
 - [AGENTS.md](../AGENTS.md)
 - [packages/codex-client/PROTOCOL.md](../packages/codex-client/PROTOCOL.md)

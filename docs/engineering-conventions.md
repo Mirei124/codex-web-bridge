@@ -8,6 +8,7 @@ This file summarizes project-specific rules that are easy to miss when changing 
 - Do not add defensive checks for impossible internal states.
 - Validate at system boundaries: HTTP input, CLI input, SSH results, external processes.
 - Read the relevant source files before changing behavior.
+- Keep docs high level; code is the detailed source of truth.
 
 ## Session Lifecycle
 
@@ -39,12 +40,6 @@ This file summarizes project-specific rules that are easy to miss when changing 
 - Persist thread-create defaults on the server, not in browser-local storage.
 - For Fastify error translations exposed through the CLI, prefer the response `message` over generic HTTP `error`.
 - Do not attach `Content-Type: application/json` to empty-body web requests.
-
-## Storage and Migrations
-
-- `packages/storage` owns schema creation and inline migrations.
-- Prefer additive migrations that preserve existing state.
-- If a new field affects create, resume, reconnect, or list flows, verify all of those paths explicitly.
 
 ## Documentation Expectations
 

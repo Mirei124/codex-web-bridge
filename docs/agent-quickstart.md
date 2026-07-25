@@ -1,8 +1,8 @@
 # Agent Quickstart
 
-This is the fastest accurate way to build a working mental model of the repository before you change code.
+Use this file to get oriented before reading code.
 
-## In One Minute
+## Project In One View
 
 - This project is a single-user bridge between a browser or CLI and Codex sessions running on local or remote machines over SSH.
 - Durable state lives on the bridge host in SQLite.
@@ -10,76 +10,45 @@ This is the fastest accurate way to build a working mental model of the reposito
 - The daemon talks to Codex through `codex app-server`, not by parsing terminal text.
 - The dashboard and CLI are two surfaces over the same daemon state.
 
-## Core Files
+## Main Code Areas
 
-Read these first:
+- `apps/server/src`: daemon, HTTP API, control API, runtime orchestration
+- `apps/web/src`: dashboard UI
+- `packages/remote-runtime/src`: SSH and tmux integration
+- `packages/storage/src`: SQLite schema and persistence
+- `packages/protocol/src`: shared API and event types
 
-1. `apps/server/src/server.ts`
-2. `apps/server/src/runtime-manager.ts`
-3. `packages/remote-runtime/src/index.ts`
-4. `packages/storage/src/index.ts`
-5. `apps/web/src/App.tsx`
-6. `AGENTS.md`
+## Core Mental Model
 
-That set gives you the API surface, runtime lifecycle, remote command model, persistence schema, UI behavior, and repo-specific invariants.
-
-## The Main Mental Model
-
-One bridge thread is local bridge state plus one remote tmux-managed Codex runtime.
-
-Durable state:
+One bridge thread combines:
 
 - host records
 - bridge thread records
 - persisted messages
 - pending requests
-- login sessions
-
-Remote state:
-
-- SSH connection
-- tmux session
-- `codex app-server`
-- optional `codex resume` viewer pane
+- a remote tmux-managed Codex runtime
 
 Deleting a bridge thread removes only the durable bridge record and local runtime attachment. It must not erase Codex history on the target host.
 
-## Request Flow
+## What To Read First
 
-### Sending a message
+If the task is mostly:
 
-1. HTTP request enters `server.ts`
-2. user message is stored in SQLite
-3. `runtime-manager.ts` sends `turn/start` through `CodexClient`
-4. Codex events stream back
-5. `server.ts` projects them into stored messages and `ServerEvent`s
-6. the dashboard updates through WebSocket
+- API or state projection: read `apps/server/src/server.ts`
+- SSH, tmux, or runtime lifecycle: read `apps/server/src/runtime-manager.ts` and `packages/remote-runtime/src/index.ts`
+- persistence: read `packages/storage/src/index.ts`
+- dashboard behavior: read `apps/web/src/App.tsx`
 
-### Approvals and questions
-
-1. Codex emits an RPC request
-2. `server.ts` stores it as a pending request
-3. the dashboard renders it
-4. user resolves it
-5. the response is sent back through the runtime manager
-
-### Terminal
-
-1. terminal access is prepared lazily
-2. remote tmux viewer output is piped into a FIFO
-3. SSH streams FIFO bytes back to the daemon
-4. WebSocket pushes terminal data to the browser
-
-## Where Bugs Usually Hide
+## Common Risk Areas
 
 - thread lifecycle transitions across create, resume, reconnect, exit, and delete
 - event routing for new `ServerEvent` shapes
 - terminal handling before the first rollout exists
 - PATH and proxy handling at the SSH command boundary
 - request persistence and replay after reconnect or reload
-- divergence between server state, storage state, and dashboard projections
+- divergence between runtime state, stored state, and UI state
 
-## Non-Negotiable Project Rules
+## Non-Negotiable Constraints
 
 - Do not invent behavior for files you have not read.
 - Do not add speculative abstractions.
@@ -88,20 +57,7 @@ Deleting a bridge thread removes only the durable bridge record and local runtim
 - Do not treat bridge-thread deletion as remote-session destruction.
 - Do not bypass shared event thread-ID routing logic.
 
-## Fast Task Routing
-
-If you need to:
-
-- change API behavior: start in `apps/server/src/server.ts`
-- change SSH or tmux behavior: start in `packages/remote-runtime/src/index.ts`
-- change reconnect or runtime lifecycle: start in `apps/server/src/runtime-manager.ts`
-- change durable data: start in `packages/storage/src/index.ts`
-- change dashboard behavior: start in `apps/web/src/App.tsx`
-- change CLI behavior: start in `apps/server/src/cli.ts` and `cli-command.ts`
-
-Then use [Change Guide](./change-guide.md) for the detailed edit map.
-
-## Supporting Docs
+## Next Docs
 
 - [Architecture](./architecture.md)
 - [Change Guide](./change-guide.md)
