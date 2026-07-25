@@ -1,6 +1,14 @@
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { Storage } from "./index.js";
+
 let storage: Storage | undefined;
+const packageRoot = dirname(fileURLToPath(import.meta.url));
+const bunBinary = resolve(packageRoot, "../../../node_modules/.bin/bun");
+
 afterEach(() => storage?.close());
 describe("Storage", () => {
   it("expires login sessions", () => {
@@ -128,5 +136,28 @@ describe("Storage", () => {
     expect(storage.host("h")).toBeUndefined();
     expect(storage.threadCreateDefaults()).toBeUndefined();
     expect(storage.deleteHost("h")).toBe(false);
+  });
+  it("writes host names correctly in the Bun runtime used by the standalone binary", () => {
+    if (!existsSync(bunBinary)) return;
+    const script = `
+      import { Storage } from ${JSON.stringify(pathToFileURL(resolve(packageRoot, "index.ts")).href)};
+      const storage = new Storage(":memory:");
+      storage.upsertHost({
+        id: "h",
+        name: "admin@10.28.126.3",
+        hostname: "10.28.126.3",
+        port: 22,
+        username: "admin",
+        hostKeySha256: "fingerprint",
+        identityFile: "",
+        createdAt: 1,
+      });
+      console.log(JSON.stringify(storage.host("h")));
+      storage.close();
+    `;
+    const result = spawnSync(bunBinary, ["--eval", script], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({ id: "h", name: "admin@10.28.126.3" });
   });
 });

@@ -184,9 +184,19 @@ export class Storage {
   upsertHost(host: HostRecord): void {
     this.db
       .prepare(
-        "INSERT INTO hosts(id,name,hostname,port,username,host_key_sha256,identity_file,prepend_path,created_at) VALUES(@id,@name,@hostname,@port,@username,@hostKeySha256,@identityFile,@prependPath,@createdAt) ON CONFLICT(id) DO UPDATE SET name=excluded.name,hostname=excluded.hostname,port=excluded.port,username=excluded.username,host_key_sha256=excluded.host_key_sha256,identity_file=excluded.identity_file,prepend_path=excluded.prepend_path",
+        "INSERT INTO hosts(id,name,hostname,port,username,host_key_sha256,identity_file,prepend_path,created_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,hostname=excluded.hostname,port=excluded.port,username=excluded.username,host_key_sha256=excluded.host_key_sha256,identity_file=excluded.identity_file,prepend_path=excluded.prepend_path",
       )
-      .run({ ...host, prependPath: host.prependPath ?? null });
+      .run(
+        host.id,
+        host.name,
+        host.hostname,
+        host.port,
+        host.username,
+        host.hostKeySha256,
+        host.identityFile,
+        host.prependPath ?? null,
+        host.createdAt,
+      );
   }
   deleteHost(id: string): boolean {
     const deleted = this.db.prepare("DELETE FROM hosts WHERE id=?").run(id).changes === 1;
@@ -210,16 +220,23 @@ export class Storage {
   createThread(thread: ThreadRecord): void {
     this.db
       .prepare(
-        "INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,prepend_path,title,status,has_rollout,created_at,updated_at) VALUES(@id,@hostId,@codexThreadId,@tmuxSession,@remotePort,@workingDirectory,@proxy,@prependPath,@title,@status,@hasRollout,@createdAt,@updatedAt)",
+        "INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,prepend_path,title,status,has_rollout,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
       )
-      .run({
-        ...thread,
-        codexThreadId: thread.codexThreadId ?? null,
-        remotePort: thread.remotePort ?? null,
-        proxy: thread.proxy ?? null,
-        prependPath: thread.prependPath ?? null,
-        hasRollout: thread.hasRollout ?? 0,
-      });
+      .run(
+        thread.id,
+        thread.hostId,
+        thread.codexThreadId ?? null,
+        thread.tmuxSession,
+        thread.remotePort ?? null,
+        thread.workingDirectory,
+        thread.proxy ?? null,
+        thread.prependPath ?? null,
+        thread.title,
+        thread.status,
+        thread.hasRollout ?? 0,
+        thread.createdAt,
+        thread.updatedAt,
+      );
   }
   updateThread(
     id: string,
@@ -227,16 +244,16 @@ export class Storage {
   ): void {
     this.db
       .prepare(
-        "UPDATE threads SET codex_thread_id=COALESCE(@codexThreadId,codex_thread_id),remote_port=COALESCE(@remotePort,remote_port),status=COALESCE(@status,status),has_rollout=COALESCE(@hasRollout,has_rollout),updated_at=@updatedAt WHERE id=@id",
+        "UPDATE threads SET codex_thread_id=COALESCE(?,codex_thread_id),remote_port=COALESCE(?,remote_port),status=COALESCE(?,status),has_rollout=COALESCE(?,has_rollout),updated_at=? WHERE id=?",
       )
-      .run({
+      .run(
+        update.codexThreadId ?? null,
+        update.remotePort ?? null,
+        update.status ?? null,
+        update.hasRollout ?? null,
+        update.updatedAt,
         id,
-        codexThreadId: update.codexThreadId ?? null,
-        remotePort: update.remotePort ?? null,
-        status: update.status ?? null,
-        hasRollout: update.hasRollout ?? null,
-        updatedAt: update.updatedAt,
-      });
+      );
   }
   deleteThread(id: string): boolean {
     return this.db.prepare("DELETE FROM threads WHERE id=?").run(id).changes === 1;
@@ -251,9 +268,9 @@ export class Storage {
   putMessage(message: MessageRecord): void {
     this.db
       .prepare(
-        "INSERT INTO messages(id,thread_id,role,text,streaming,created_at) VALUES(@id,@threadId,@role,@text,@streaming,@createdAt) ON CONFLICT(id) DO UPDATE SET text=excluded.text,streaming=excluded.streaming",
+        "INSERT INTO messages(id,thread_id,role,text,streaming,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET text=excluded.text,streaming=excluded.streaming",
       )
-      .run(message);
+      .run(message.id, message.threadId, message.role, message.text, message.streaming, message.createdAt);
   }
   appendMessage(id: string, text: string, streaming: boolean): void {
     this.db.prepare("UPDATE messages SET text=text||?,streaming=? WHERE id=?").run(text, streaming ? 1 : 0, id);
@@ -275,9 +292,18 @@ export class Storage {
   putPending(request: PendingRecord): void {
     this.db
       .prepare(
-        "INSERT INTO pending_requests(id,thread_id,payload,rpc_id,method,params,resolved_at,created_at) VALUES(@id,@threadId,@payload,@rpcId,@method,@params,@resolvedAt,@createdAt)",
+        "INSERT INTO pending_requests(id,thread_id,payload,rpc_id,method,params,resolved_at,created_at) VALUES(?,?,?,?,?,?,?,?)",
       )
-      .run({ ...request, resolvedAt: request.resolvedAt ?? null });
+      .run(
+        request.id,
+        request.threadId,
+        request.payload,
+        request.rpcId,
+        request.method,
+        request.params,
+        request.resolvedAt ?? null,
+        request.createdAt,
+      );
   }
   resolvePending(id: string, threadId: string, now = Date.now()): boolean {
     return (
@@ -316,9 +342,9 @@ export class Storage {
   saveThreadCreateDefaults(value: ThreadCreateDefaultsRecord): void {
     this.db
       .prepare(
-        "INSERT INTO thread_create_defaults(singleton,host_id,cwd,proxy,prepend_path) VALUES(1,@hostId,@cwd,@proxy,@prependPath) ON CONFLICT(singleton) DO UPDATE SET host_id=excluded.host_id,cwd=excluded.cwd,proxy=excluded.proxy,prepend_path=excluded.prepend_path",
+        "INSERT INTO thread_create_defaults(singleton,host_id,cwd,proxy,prepend_path) VALUES(1,?,?,?,?) ON CONFLICT(singleton) DO UPDATE SET host_id=excluded.host_id,cwd=excluded.cwd,proxy=excluded.proxy,prepend_path=excluded.prepend_path",
       )
-      .run({ ...value, proxy: value.proxy ?? null, prependPath: value.prependPath ?? null });
+      .run(value.hostId, value.cwd, value.proxy ?? null, value.prependPath ?? null);
   }
   close(): void {
     this.db.close();

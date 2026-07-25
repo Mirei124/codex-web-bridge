@@ -104,3 +104,8 @@
 - Keep public-IP examples generic in deploy snippets and certificate paths.
   Replace hardcoded production addresses with placeholders so example files do not
   leak environment-specific values or get copied into the wrong deployment.
+- Do not rely on object-form named SQLite parameter binding in storage writes.
+  `better-sqlite3` accepts `.run({ key: value })`, but the Bun-compiled binary's
+  `bun:sqlite` can silently bind those `@name` parameters as `NULL`. Use positional
+  `?` placeholders for inserts and updates that must behave the same in Node and
+  the standalone binary.
