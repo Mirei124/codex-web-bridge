@@ -311,6 +311,8 @@ describe("dashboard security and operations", () => {
     await screen.findByRole("button", { name: "显式接管" }); const previousInputs = fetch.mock.calls.filter(call => call[0] === "/api/threads/t/terminal/input").length;
     terminalInput?.("blocked-again");
     expect(fetch.mock.calls.filter(call => call[0] === "/api/threads/t/terminal/input")).toHaveLength(previousInputs);
+    WebSocketStub.instances.at(-1)?.emit({ type: "terminal.state", threadId: "t", connected: false, takeover: false });
+    expect(await screen.findByRole("button", { name: "显式接管" })).toBeDisabled();
   });
 
   it("collects each question answer before resolving one request", async () => {
