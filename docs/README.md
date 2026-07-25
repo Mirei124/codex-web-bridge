@@ -4,17 +4,18 @@ This directory is for agents and developers who need a fast, accurate mental mod
 
 Read in this order:
 
-1. [Architecture](./architecture.md)
-2. [Module Map](./module-map.md)
-3. [Engineering Conventions](./engineering-conventions.md)
+1. [Agent Quickstart](./agent-quickstart.md)
+2. [Architecture](./architecture.md)
+3. [Change Guide](./change-guide.md)
+4. [Engineering Conventions](./engineering-conventions.md)
 
 ## What This Documentation Covers
 
 - process and runtime model
 - end-to-end data flow
 - persistence model
-- ownership of major modules
 - common change entry points
+- first-read guidance for agents
 - project-specific rules that are easy to break
 
 ## Sources of Truth
