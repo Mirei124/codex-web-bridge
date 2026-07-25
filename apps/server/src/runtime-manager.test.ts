@@ -52,7 +52,7 @@ class FakeRuntime {
     return false;
   }
   async start(name: string, _cwd: string, remotePort: number) {
-    return { name, appServerPane: "%1", remotePort, fifoPath: "/fifo" };
+    return { name, appServerPane: "%1", remotePort, fifoPath: "/fifo", appServerLogPath: "/log" };
   }
   async waitUntilReady() {}
   async attachViewer(session: any, _cwd: string, threadId: string) {

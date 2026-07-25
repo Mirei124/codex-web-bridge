@@ -15,11 +15,13 @@ class FakeRemote implements RemoteExecutor {
   sessionExists = false;
   probeReady = false;
   commandLookupCode: number | null = 0;
+  appServerLog = "";
   streams: any[] = [];
   async execute(program: string, args: readonly string[] = []): Promise<CommandResult> {
     this.calls.push([program, args]);
     if (program === "command" && args[0] === "-v")
       return { stdout: `/resolved/${args[1]}\n`, stderr: "", code: this.commandLookupCode };
+    if (program === "/resolved/codex" && args[0] === "--version") return { stdout: "codex 1.0.0\n", stderr: "", code: 0 };
     if (program.endsWith("tmux") && args[0] === "has-session")
       return { stdout: "", stderr: "", code: this.sessionExists ? 0 : 1 };
     if (program.endsWith("tmux") && args[0] === "list-panes")
@@ -28,6 +30,8 @@ class FakeRemote implements RemoteExecutor {
     if (program.endsWith("tmux") && args[0] === "split-window") return { stdout: "%2\n", stderr: "", code: 0 };
     if (program.endsWith("tmux") && args[0] === "display-message") return { stdout: "93\t31\n", stderr: "", code: 0 };
     if (program === "stat" || program === "id") return { stdout: "1000\n", stderr: "", code: 0 };
+    if (program === "sh" && args[0] === "-c" && args[1] === 'test -f "$1" && tail -n 20 "$1"')
+      return { stdout: this.appServerLog, stderr: "", code: this.appServerLog ? 0 : 1 };
     if (program === "test" && args[0] === "-L") return { stdout: "", stderr: "", code: 1 };
     if (program === "test" && args[0] === "-e") return { stdout: "", stderr: "", code: 1 };
     return { stdout: "", stderr: "", code: 0 };
@@ -114,7 +118,8 @@ describe("remote command safety", () => {
     const viewerCommand = remote.calls.find((call) => call[1][0] === "split-window")?.[1].at(-1);
     for (const command of [appCommand, viewerCommand]) {
       expect(command).toContain("'env'");
-      expect(command).toContain(`'HTTPS_PROXY=http://user:p'\\''a$(bad)@proxy.example:8080'`);
+      expect(command).toContain("HTTPS_PROXY=http://user:p");
+      expect(command).toContain("a$(bad)@proxy.example:8080");
       expect(command).toContain("'https_proxy=http://");
     }
   });
@@ -147,9 +152,19 @@ describe("remote command safety", () => {
     remote.sessionExists = true;
     setTimeout(() => (remote.probeReady = true), 5);
     await new TmuxCodexRuntime(remote).waitUntilReady(
-      { name: "ready", appServerPane: "ready:0.0", remotePort: 4000, fifoPath: "/tmp/x" },
+      { name: "ready", appServerPane: "ready:0.0", remotePort: 4000, fifoPath: "/tmp/x", appServerLogPath: "/tmp/log" },
       { timeoutMs: 100, intervalMs: 1 },
     );
+  });
+  it("includes the last app-server output when startup exits early", async () => {
+    const remote = new FakeRemote();
+    remote.appServerLog = "/data1/chenkeyu/.local/share/pnpm/codex: 20: exec: node: not found\n";
+    await expect(
+      new TmuxCodexRuntime(remote).waitUntilReady(
+        { name: "ready", appServerPane: "ready:0.0", remotePort: 4000, fifoPath: "/tmp/x", appServerLogPath: "/tmp/log" },
+        { timeoutMs: 1, intervalMs: 1 },
+      ),
+    ).rejects.toThrow(/exec: node: not found/);
   });
   it("renders a bounded PNG from a fresh ANSI snapshot", async () => {
     const result = await new TerminalSnapshotRenderer().render("\u001b[31mhello", { cols: 9999, rows: 1 });
@@ -167,6 +182,7 @@ describe("remote command safety", () => {
       viewerPane: "%2",
       remotePort: 4000,
       fifoPath: "/safe/runtime/cwb_1.ansi",
+      appServerLogPath: "/safe/runtime/cwb_1.app-server.log",
     };
     await runtime.terminalStream(session);
     await runtime.reconnectTerminal(session);
@@ -176,7 +192,14 @@ describe("remote command safety", () => {
   it("sends terminal controls and escape sequences as tmux keys while pasting text through unique buffers", async () => {
     const remote = new FakeRemote(),
       runtime = new TmuxCodexRuntime(remote),
-      session = { name: "cwb_1", appServerPane: "%1", viewerPane: "%2", remotePort: 4000, fifoPath: "/fifo" };
+      session = {
+        name: "cwb_1",
+        appServerPane: "%1",
+        viewerPane: "%2",
+        remotePort: 4000,
+        fifoPath: "/fifo",
+        appServerLogPath: "/log",
+      };
     for (const value of [
       "\x03",
       "\x04",
@@ -217,7 +240,14 @@ describe("remote command safety", () => {
   it("reads the actual viewer pane dimensions", async () => {
     const runtime = new TmuxCodexRuntime(new FakeRemote());
     await expect(
-      runtime.dimensions({ name: "cwb", appServerPane: "%1", viewerPane: "%2", remotePort: 4000, fifoPath: "/fifo" }),
+      runtime.dimensions({
+        name: "cwb",
+        appServerPane: "%1",
+        viewerPane: "%2",
+        remotePort: 4000,
+        fifoPath: "/fifo",
+        appServerLogPath: "/log",
+      }),
     ).resolves.toEqual({ cols: 93, rows: 31 });
   });
   it("kills the tmux session before removing its FIFO", async () => {

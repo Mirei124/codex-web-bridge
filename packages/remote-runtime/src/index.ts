@@ -196,6 +196,7 @@ export interface RemoteSession {
   viewerPane?: string;
   remotePort: number;
   fifoPath: string;
+  appServerLogPath: string;
   threadId?: string;
 }
 
@@ -216,7 +217,7 @@ export class TmuxCodexRuntime {
     this.configuredRuntimeDirectory = options.runtimeDirectory;
   }
   async checkPrerequisites(): Promise<void> {
-    for (const program of [this.tmux, this.codex]) {
+    for (const program of [this.tmux, this.codex, "node"]) {
       const result = await this.remote.execute("command", ["-v", program]);
       const resolved = result.stdout.trim();
       if ((result.code !== 0 && result.code !== null) || !resolved)
@@ -225,16 +226,20 @@ export class TmuxCodexRuntime {
       if (program === this.tmux) this.resolvedTmux = resolved;
       if (program === this.codex) this.resolvedCodex = resolved;
     }
+    const codexVersion = await this.remote.execute(this.resolvedCodex ?? this.codex, ["--version"]);
+    if (codexVersion.code !== 0) throw new Error(this.describeExecutableFailure("codex", codexVersion));
   }
   /** Start the persistent app-server pane. Attach the viewer after thread/start or thread/resume. */
   async start(name: string, cwd: string, remotePort: number, proxy?: string): Promise<RemoteSession> {
     validateName(name);
     validatePort(remotePort);
     const runtimeDirectory = await this.runtimeDirectory();
-    const fifoPath = `${runtimeDirectory}/${name}.ansi`;
+    const fifoPath = `${runtimeDirectory}/${name}.ansi`,
+      appServerLogPath = `${runtimeDirectory}/${name}.app-server.log`;
     await this.prepareRuntimeDirectory(runtimeDirectory);
     const panes = await this.findPanes(name);
-    if (panes) return { name, appServerPane: panes.appServerPane, viewerPane: panes.viewerPane, remotePort, fifoPath };
+    if (panes)
+      return { name, appServerPane: panes.appServerPane, viewerPane: panes.viewerPane, remotePort, fifoPath, appServerLogPath };
     const existing = await this.remote.execute("test", ["-e", fifoPath]);
     if (existing.code === 0) {
       const isFifo = await this.remote.execute("test", ["-p", fifoPath]);
@@ -242,11 +247,7 @@ export class TmuxCodexRuntime {
       await this.must("rm", ["-f", fifoPath]);
     }
     await this.must("mkfifo", ["-m", "600", fifoPath]);
-    const appCommand = proxiedCommand(
-      this.resolvedCodex ?? this.codex,
-      ["-c", "check_for_update_on_startup=false", "app-server", "--listen", `ws://127.0.0.1:${remotePort}`],
-      proxy,
-    );
+    const appCommand = this.appServerCommand(remotePort, appServerLogPath, proxy);
     const created = await this.must(this.resolvedTmux ?? this.tmux, [
       "new-session",
       "-d",
@@ -268,7 +269,7 @@ export class TmuxCodexRuntime {
       "@cwb-role",
       "app-server",
     ]);
-    return { name, appServerPane, remotePort, fifoPath };
+    return { name, appServerPane, remotePort, fifoPath, appServerLogPath };
   }
   async waitUntilReady(
     session: RemoteSession,
@@ -279,10 +280,20 @@ export class TmuxCodexRuntime {
     do {
       if (await this.remote.probeTcp("127.0.0.1", session.remotePort)) return;
       if (!(await this.exists(session.name)))
-        throw new Error("Codex app-server tmux session exited before becoming ready");
+        throw new Error(
+          this.describeAppServerFailure(
+            "Codex app-server tmux session exited before becoming ready",
+            await this.appServerLogExcerpt(session.appServerLogPath),
+          ),
+        );
       await new Promise((resolve) => setTimeout(resolve, options.intervalMs ?? 100));
     } while (Date.now() < deadline);
-    throw new Error(`Codex app-server did not listen on port ${session.remotePort} before timeout`);
+    throw new Error(
+      this.describeAppServerFailure(
+        `Codex app-server did not listen on port ${session.remotePort} before timeout`,
+        await this.appServerLogExcerpt(session.appServerLogPath),
+      ),
+    );
   }
   async attachViewer(session: RemoteSession, cwd: string, threadId: string, proxy?: string): Promise<RemoteSession> {
     if (session.viewerPane) return { ...session, threadId };
@@ -443,6 +454,31 @@ export class TmuxCodexRuntime {
     }
     if (!appServerPane) throw new Error(`Existing tmux session '${name}' is not managed by Codex Web Bridge`);
     return { appServerPane, viewerPane };
+  }
+  private appServerCommand(remotePort: number, appServerLogPath: string, proxy?: string): string {
+    const command = proxiedCommand(
+      this.resolvedCodex ?? this.codex,
+      ["-c", "check_for_update_on_startup=false", "app-server", "--listen", `ws://127.0.0.1:${remotePort}`],
+      proxy,
+    );
+    return commandLine("sh", ["-lc", `exec ${command} > ${shellQuote(appServerLogPath)} 2>&1`]);
+  }
+  private async appServerLogExcerpt(appServerLogPath: string): Promise<string | undefined> {
+    const result = await this.remote.execute("sh", [
+      "-c",
+      'test -f "$1" && tail -n 20 "$1"',
+      "cwb-app-server-log",
+      appServerLogPath,
+    ]);
+    const output = `${result.stdout}${result.stderr}`.trim();
+    return output || undefined;
+  }
+  private describeExecutableFailure(program: string, result: CommandResult): string {
+    const detail = (result.stderr || result.stdout).trim();
+    return detail ? `Remote ${program} failed: ${detail}` : `Remote ${program} failed (${result.code ?? "unknown"})`;
+  }
+  private describeAppServerFailure(message: string, output: string | undefined): string {
+    return output ? `${message}. Last app-server output:\n${output}` : message;
   }
 }
 function validateName(name: string): void {
