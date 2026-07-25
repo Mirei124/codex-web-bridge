@@ -21,7 +21,6 @@ export interface CodexClientOptions {
   requestTimeoutMs?: number;
   webSocketFactory?: (url: string) => WebSocket;
   clientInfo?: { name: string; version: string; title?: string };
-  diagnostic?: (event: string, details?: Record<string, unknown>) => void;
 }
 
 /** Thin, version-pinned client for the Codex app-server v2 JSON-RPC protocol. */
@@ -38,7 +37,6 @@ export class CodexClient extends EventEmitter {
 
   async connect(): Promise<void> {
     if (this.socket?.readyState === WebSocket.OPEN) return;
-    this.diagnostic("connect.started");
     const socket = (this.options.webSocketFactory ?? ((url) => new WebSocket(url)))(this.options.url);
     this.socket = socket;
     socket.on("message", (bytes) => this.receive(String(bytes)));
@@ -49,19 +47,14 @@ export class CodexClient extends EventEmitter {
     socket.on("error", (error) => this.emit("transportError", error));
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.diagnostic("connect.timed-out", {
-          timeoutMs: this.options.connectTimeoutMs ?? 10_000,
-        });
         reject(new Error("Timed out connecting to Codex app-server"));
       }, this.options.connectTimeoutMs ?? 10_000);
       socket.once("open", () => {
         clearTimeout(timer);
-        this.diagnostic("connect.succeeded");
         resolve();
       });
       socket.once("error", (error) => {
         clearTimeout(timer);
-        this.diagnostic("connect.failed", { error: errorText(error) });
         reject(error);
       });
     });
@@ -177,12 +170,4 @@ export class CodexClient extends EventEmitter {
     }
     this.pending.clear();
   }
-
-  private diagnostic(event: string, details?: Record<string, unknown>): void {
-    this.options.diagnostic?.(`codex-client.${event}`, { url: this.options.url, ...details });
-  }
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? (error.stack ?? error.message) : String(error);
 }
