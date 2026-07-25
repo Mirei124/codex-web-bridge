@@ -66,6 +66,15 @@ pnpm install
 pnpm build
 ```
 
+### Standalone binary
+
+Build a self-contained executable with Bun:
+
+```bash
+pnpm build:binary
+./release/codex-web-bridge-linux-x64-gnu help
+```
+
 ### 2. Start the daemon
 
 ```bash
@@ -157,15 +166,6 @@ pnpm cwb start --origin "https://bridge.example.com"
 ### systemd service
 
 Use [deploy/systemd/codex-web-bridge.service.example](deploy/systemd/codex-web-bridge.service.example) as a starting point for a long-running service.
-
-## Standalone Binary
-
-Build a self-contained executable with Bun:
-
-```bash
-pnpm build:binary
-./release/codex-web-bridge-linux-x64-gnu help
-```
 
 ## Development
 

@@ -1,21 +1,20 @@
 # Documentation Index
 
-This directory is intentionally small and high level.
+This directory is intentionally small and stable.
 
-Its job is to help agents and developers orient themselves quickly:
+It only covers:
 
-- what the system is
-- where the main code areas are
-- which project constraints are easy to break
+- the project structure
+- the main code areas
+- the key principles behind the implementation
+- repo-specific pitfalls that are easy to repeat
 
-It is not the source of truth for implementation details. Read the code for current behavior.
+It does not try to track implementation detail.
 
-## Read Order
+## Files
 
-1. [Agent Quickstart](./agent-quickstart.md)
-2. [Architecture](./architecture.md)
-3. [Change Guide](./change-guide.md)
-4. [Engineering Conventions](./engineering-conventions.md)
+- [Architecture](./architecture.md)
+- [Engineering Conventions](./engineering-conventions.md)
 
 ## Source of Truth
 
@@ -27,8 +26,3 @@ Implementation truth lives in:
 - `packages/storage/src`
 - `packages/protocol/src`
 - `AGENTS.md`
-
-## Read Alongside
-
-- [AGENTS.md](../AGENTS.md)
-- [packages/codex-client/PROTOCOL.md](../packages/codex-client/PROTOCOL.md)

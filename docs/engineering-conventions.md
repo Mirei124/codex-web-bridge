@@ -1,48 +1,37 @@
 # Engineering Conventions
 
-This file summarizes project-specific rules that are easy to miss when changing code. It complements, but does not replace, [AGENTS.md](../AGENTS.md).
+This file keeps only repo-specific pitfalls that have already caused bugs or regressions.
 
-## General Principles
+## Lifecycle Pitfalls
 
-- Prefer the minimum complexity needed for the current behavior.
-- Do not add defensive checks for impossible internal states.
-- Validate at system boundaries: HTTP input, CLI input, SSH results, external processes.
-- Read the relevant source files before changing behavior.
-- Keep docs high level; code is the detailed source of truth.
+- Deleting a bridge thread is not the same as exiting its remote session. Delete must detach local bridge state and leave remote tmux and Codex history intact.
+- Explicit stop, exit, destroy, password-change restart, and daemon restart paths must treat remote shutdown as strict, not best-effort. Persisted state should change only after the explicit lifecycle action succeeds.
+- First-run startup that generated a one-time password is transactional. If startup fails before the password is delivered, roll back only the config created by that startup attempt.
+- A fresh `thread/start` has no resumable rollout until the first accepted turn. Do not assume a viewer pane or `codex resume` target exists yet.
 
-## Session Lifecycle
+## Event And Projection Pitfalls
 
-- A bridge thread is not the same thing as a remote Codex session.
-- Deleting a thread removes local bridge state and detaches the runtime, but must not destroy remote Codex history.
-- Exiting a thread is an explicit remote lifecycle action and must fail loudly if the remote shutdown fails.
-- First-run config that generated a one-time password is part of startup transaction handling and must roll back carefully on failure.
+- `ServerEvent` variants do not all carry thread identity in the same field. Update shared thread-routing logic whenever a new event shape is added, or WebSocket and CLI subscribers will diverge.
+- Persist pending requests and resolve them carefully across reconnect boundaries. Connection changes can invalidate outstanding interactions.
+- For control and CLI surfaces, prefer actionable Fastify response `message` values over generic HTTP `error` text.
 
-## Runtime and SSH Rules
+## SSH And Remote Command Pitfalls
 
-- Route host and thread `prependPath` through `withPrependedPath()` and command arguments, not string interpolation.
-- Treat prepend paths as colon-separated absolute directories only.
-- Resolve `tmux` and `codex` to absolute paths during prerequisite checks and reuse those resolved paths later.
-- Do not assume a pre-existing tmux server inherited the current SSH command environment.
-- Do not persist host acceptance or daemon in-memory host passwords before SSH host-key confirmation succeeds.
+- Never interpolate external values such as proxy URLs into tmux command strings. Route them through argument-based quoting.
+- Host and thread prepend PATH settings are literal absolute-directory prefixes, not shell fragments. Thread prefix takes precedence over host prefix.
+- Do not rely on a pre-existing tmux server inheriting PATH from the current SSH command. Resolve Codex to an absolute path first and reuse that path in later tmux commands.
+- Some SSH servers omit `exit-status` on exec close. Treat a non-empty absolute result from discovery commands such as `command -v` as usable, and recover final status at the `SshConnection.execute` boundary.
+- SSH host-key confirmation for Web flows must not persist the host or stash the host password in daemon memory until the fingerprint is explicitly accepted.
 
-## Terminal Rules
+## Terminal Pitfalls
 
-- A fresh thread may not have a viewer pane yet.
-- Terminal, screenshot, and takeover flows must prepare the viewer lazily.
-- Send standalone control bytes through tmux key semantics.
-- Preserve ordinary text and multibyte escape sequences as raw pasted buffers.
-- Use unique tmux paste buffers per input event to avoid concurrent races.
+- Fresh threads can stay headless. Screenshot, terminal input, and takeover flows must prepare the viewer lazily.
+- Standalone control bytes should go through tmux key semantics, while ordinary text and multi-byte escape sequences should stay intact as one raw payload.
+- Use a unique tmux paste buffer per terminal text input. Reusing buffer names races under concurrent input.
+- Normalize standalone DEL to Backspace at the web terminal boundary.
 
-## Event and API Rules
+## Web And Settings Pitfalls
 
-- Keep server-side event routing centralized.
-- When adding a new `ServerEvent`, update shared thread-ID extraction logic so WebSocket and CLI subscribers stay aligned.
-- Persist thread-create defaults on the server, not in browser-local storage.
-- For Fastify error translations exposed through the CLI, prefer the response `message` over generic HTTP `error`.
-- Do not attach `Content-Type: application/json` to empty-body web requests.
-
-## Documentation Expectations
-
-- Keep user-facing documentation in `README.md`.
-- Keep agent and developer onboarding material in `docs/`.
-- When a completed fix reveals a reusable project rule, add the generalized lesson to `AGENTS.md`.
+- Empty-body web requests must not send `Content-Type: application/json`, or Fastify can reject them before lifecycle handlers run.
+- Create-thread defaults belong on the server, not in browser-local storage.
+- Runtime settings changed through the running server must be persisted and marked as restart-required; the request handler must not try to replace its own daemon process.
