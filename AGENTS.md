@@ -92,3 +92,15 @@
 - Keep repository-wide formatting centralized in the root Prettier config and root
   `pnpm format` / `pnpm format:check` scripts so every workspace uses the same
   formatter behavior.
+- When using Caddy on non-standard HTTPS ports, remember that `https_port`
+  changes the listener port but does not by itself guarantee a `Location` header
+  with `:8443`. If a deployment must redirect clients to the explicit HTTPS port,
+  add an `http://` redirect block and verify the returned URL with `curl`.
+- For IP-only Caddy deployments, do not rely on `tls internal` to satisfy plain
+  `curl https://<ip>:8443` tests. IP clients often do not send SNI, so Caddy may
+  fail to select a cert. Use a certificate whose SAN includes the IP and point
+  the site at explicit cert/key paths, or make the HTTPS site block hostless with
+  `:8443` so it behaves like a default server.
+- Keep public-IP examples generic in deploy snippets and certificate paths.
+  Replace hardcoded production addresses with placeholders so example files do not
+  leak environment-specific values or get copied into the wrong deployment.

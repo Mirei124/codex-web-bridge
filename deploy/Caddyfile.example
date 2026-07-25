@@ -1,7 +1,22 @@
-# Recommended public deployment: initialize codex-web-bridge with this site's
-# HTTPS origin, keep its default 127.0.0.1 listener, and let Caddy be the only
-# public-facing process. Direct local HTTP does not require this proxy.
-bridge.example.com {
+# Recommended IP-only deployment: generate a self-signed certificate whose SAN
+# includes the public IP, then point Caddy at the certificate and key directly.
+# Example:
+# openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+#   -keyout /etc/caddy/certs/YOUR_PUBLIC_IP.key \
+#   -out /etc/caddy/certs/YOUR_PUBLIC_IP.crt \
+#   -subj "/CN=YOUR_PUBLIC_IP" \
+#   -addext "subjectAltName=IP:YOUR_PUBLIC_IP"
+{
+  http_port 8080
+  https_port 8443
+}
+
+http://YOUR_PUBLIC_IP {
+  redir https://YOUR_PUBLIC_IP:8443{uri} 308
+}
+
+:8443 {
+  tls /etc/caddy/certs/YOUR_PUBLIC_IP.crt /etc/caddy/certs/YOUR_PUBLIC_IP.key
   encode zstd gzip
   reverse_proxy 127.0.0.1:3210 {
     header_up X-Forwarded-Proto https
