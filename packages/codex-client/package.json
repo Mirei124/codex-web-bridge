@@ -1,1 +1,30 @@
-{"name":"@cwb/codex-client","version":"0.1.0","type":"module","exports":{".":{"types":"./dist/index.d.ts","import":"./dist/index.js"}},"main":"./dist/index.js","types":"./dist/index.d.ts","files":["dist"],"dependencies":{"ws":"^8.18.0"},"devDependencies":{"@types/ws":"^8.5.13","typescript":"^5.7.2","vitest":"^2.1.8"},"scripts":{"build":"tsc -p tsconfig.build.json","test":"vitest run","smoke":"CWB_CODEX_SMOKE=1 vitest run test/app-server.smoke.test.ts","typecheck":"tsc --noEmit"}}
+{
+  "name": "@cwb/codex-client",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "smoke": "CWB_CODEX_SMOKE=1 vitest run test/app-server.smoke.test.ts",
+    "typecheck": "tsc --noEmit"
+  }
+}

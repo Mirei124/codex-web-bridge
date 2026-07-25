@@ -3,7 +3,11 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
-interface Props { data: string[]; writable: boolean; onInput(data: string): void }
+interface Props {
+  data: string[];
+  writable: boolean;
+  onInput(data: string): void;
+}
 
 export function Terminal({ data, writable, onInput }: Props) {
   const element = useRef<HTMLDivElement>(null);
@@ -11,12 +15,24 @@ export function Terminal({ data, writable, onInput }: Props) {
   const written = useRef(0);
   useEffect(() => {
     if (!element.current) return;
-    const xterm = new XTerm({ cursorBlink: writable, disableStdin: !writable, fontSize: 13, theme: { background: "#101411" } });
+    const xterm = new XTerm({
+      cursorBlink: writable,
+      disableStdin: !writable,
+      fontSize: 13,
+      theme: { background: "#101411" },
+    });
     const fit = new FitAddon();
-    xterm.loadAddon(fit); xterm.open(element.current); fit.fit();
-    const subscription = xterm.onData(data => onInput(data === "\x7f" ? "\x08" : data));
+    xterm.loadAddon(fit);
+    xterm.open(element.current);
+    fit.fit();
+    const subscription = xterm.onData((data) => onInput(data === "\x7f" ? "\x08" : data));
     terminal.current = xterm;
-    return () => { subscription.dispose(); xterm.dispose(); terminal.current = null; written.current = 0; };
+    return () => {
+      subscription.dispose();
+      xterm.dispose();
+      terminal.current = null;
+      written.current = 0;
+    };
   }, [onInput]);
   useEffect(() => {
     const xterm = terminal.current;

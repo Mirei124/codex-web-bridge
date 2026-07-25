@@ -12,7 +12,7 @@ async function files(directory) {
   const result = [];
   for (const entry of entries) {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) result.push(...await files(path));
+    if (entry.isDirectory()) result.push(...(await files(path)));
     else result.push(path);
   }
   return result.sort();
@@ -57,9 +57,8 @@ const entryPath = join(buildRoot, "binary-entry.ts");
 await writeFile(entryPath, entry);
 
 const suffix = process.platform === "win32" ? ".exe" : "";
-const libc = process.platform === "linux"
-  ? process.report.getReport().header.glibcVersionRuntime ? "gnu" : "musl"
-  : undefined;
+const libc =
+  process.platform === "linux" ? (process.report.getReport().header.glibcVersionRuntime ? "gnu" : "musl") : undefined;
 const platform = [process.platform, process.arch, libc].filter(Boolean).join("-");
 const output = join(releaseRoot, `codex-web-bridge-${platform}${suffix}`);
 const result = spawnSync("bun", ["build", "--compile", "--minify", entryPath, "--outfile", output], {

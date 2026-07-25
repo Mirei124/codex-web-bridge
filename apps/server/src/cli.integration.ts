@@ -14,7 +14,12 @@ function run(args: string[], env: NodeJS.ProcessEnv) {
 
 function output(result: ReturnType<typeof run>) {
   expect(result.status, result.stderr).toBe(0);
-  return JSON.parse(result.stdout) as { schemaVersion: number; ok: boolean; kind: string; data: Record<string, unknown> };
+  return JSON.parse(result.stdout) as {
+    schemaVersion: number;
+    ok: boolean;
+    kind: string;
+    data: Record<string, unknown>;
+  };
 }
 
 async function freePort(): Promise<number> {
@@ -24,7 +29,7 @@ async function freePort(): Promise<number> {
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       if (!address || typeof address === "string") return reject(new Error("missing TCP address"));
-      server.close(error => error ? reject(error) : resolvePort(address.port));
+      server.close((error) => (error ? reject(error) : resolvePort(address.port)));
     });
   });
 }
@@ -79,7 +84,9 @@ describe("built CLI and daemon", () => {
     const anonymous = await fetch(`http://127.0.0.1:${port}/api/auth/session`, { headers });
     expect(anonymous.status).toBe(401);
     const login = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
-      method: "POST", headers: { ...headers, connection: "close", "content-type": "application/json" }, body: JSON.stringify({ password: startedOutput.data.generatedPassword }),
+      method: "POST",
+      headers: { ...headers, connection: "close", "content-type": "application/json" },
+      body: JSON.stringify({ password: startedOutput.data.generatedPassword }),
     });
     expect(login.status).toBe(200);
     expect(login.headers.get("set-cookie")).not.toContain("Secure");
@@ -125,7 +132,12 @@ describe("built CLI and daemon", () => {
     expect(output(stopped)).toMatchObject({ data: { state: "stopped", pid: restartedPid } });
     const status = run(["status"], env);
     expect(status.status).toBe(3);
-    expect(JSON.parse(status.stdout)).toMatchObject({ schemaVersion: 1, ok: true, kind: "result", data: { state: "not_running" } });
+    expect(JSON.parse(status.stdout)).toMatchObject({
+      schemaVersion: 1,
+      ok: true,
+      kind: "result",
+      data: { state: "not_running" },
+    });
 
     const startedWithNewPassword = output(run(["start", "--reset-password"], env));
     expect(startedWithNewPassword.data.generatedPassword).toMatch(/^[A-Za-z0-9_-]{32}$/);
@@ -145,16 +157,23 @@ describe("built CLI and daemon", () => {
 
   it("escalates stop to SIGKILL when a daemon ignores SIGTERM", async () => {
     dataDir = await mkdtemp(join(tmpdir(), "cwb-cli-test-"));
-    const stubborn = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)", "__daemon"], {
-      detached: true,
-      stdio: "ignore",
-    });
+    const stubborn = spawn(
+      process.execPath,
+      ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)", "__daemon"],
+      {
+        detached: true,
+        stdio: "ignore",
+      },
+    );
     stubborn.unref();
     await new Promise<void>((resolveSpawn, reject) => {
       stubborn.once("spawn", resolveSpawn);
       stubborn.once("error", reject);
     });
-    await writeFile(join(dataDir, "daemon.pid"), JSON.stringify({ pid: stubborn.pid, marker: "codex-web-bridge-daemon" }));
+    await writeFile(
+      join(dataDir, "daemon.pid"),
+      JSON.stringify({ pid: stubborn.pid, marker: "codex-web-bridge-daemon" }),
+    );
 
     const stopped = run(["stop"], { ...process.env, CWB_DATA_DIR: dataDir });
 
@@ -187,7 +206,9 @@ describe("built CLI and daemon", () => {
       expect(JSON.parse(failed.stderr)).toMatchObject({ ok: false, error: { code: "daemon_unavailable" } });
       await expect(readFile(join(dataDir, "config.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
-      await new Promise<void>((resolveClose, reject) => blocker.close(error => error ? reject(error) : resolveClose()));
+      await new Promise<void>((resolveClose, reject) =>
+        blocker.close((error) => (error ? reject(error) : resolveClose())),
+      );
     }
   }, 15_000);
 

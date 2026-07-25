@@ -61,9 +61,12 @@ The daemon listens on 127.0.0.1 by default; --accept-risk binds to 0.0.0.0 over 
 Restart the daemon. Remote tmux sessions remain running.`,
   status: "Usage: codex-web-bridge status [--json]\n\nShow whether the daemon is running and its PID.",
   dashboard: "Usage: codex-web-bridge dashboard [--json]\n\nPrint the configured dashboard URL.",
-  password: "Usage:\n  codex-web-bridge password reset [--json]\n  codex-web-bridge password set NEW_PASSWORD [--json]\n\nReplace the dashboard password and restart a running daemon.",
-  "password reset": "Usage: codex-web-bridge password reset [--json]\n\nGenerate and print a new dashboard password. A running daemon is restarted automatically.",
-  "password set": "Usage: codex-web-bridge password set NEW_PASSWORD [--json]\n\nSet a dashboard password of at least 12 characters. A running daemon is restarted automatically.",
+  password:
+    "Usage:\n  codex-web-bridge password reset [--json]\n  codex-web-bridge password set NEW_PASSWORD [--json]\n\nReplace the dashboard password and restart a running daemon.",
+  "password reset":
+    "Usage: codex-web-bridge password reset [--json]\n\nGenerate and print a new dashboard password. A running daemon is restarted automatically.",
+  "password set":
+    "Usage: codex-web-bridge password set NEW_PASSWORD [--json]\n\nSet a dashboard password of at least 12 characters. A running daemon is restarted automatically.",
   host: `Usage:
   codex-web-bridge host list
   codex-web-bridge host get HOST_ID
@@ -73,8 +76,10 @@ Restart the daemon. Remote tmux sessions remain running.`,
   codex-web-bridge host upsert [OPTIONS]`,
   "host list": "Usage: codex-web-bridge host list [--json]\n\nList configured SSH hosts.",
   "host get": "Usage: codex-web-bridge host get HOST_ID [--json]\n\nShow one configured SSH host.",
-  "host delete": "Usage: codex-web-bridge host delete HOST_ID [--json]\n\nDelete a host after its CWB threads have been removed.",
-  "host codex-threads": "Usage: codex-web-bridge host codex-threads HOST_ID [--json]\n\nList Codex threads discovered on a host.",
+  "host delete":
+    "Usage: codex-web-bridge host delete HOST_ID [--json]\n\nDelete a host after its CWB threads have been removed.",
+  "host codex-threads":
+    "Usage: codex-web-bridge host codex-threads HOST_ID [--json]\n\nList Codex threads discovered on a host.",
   "host add": `Usage: codex-web-bridge host add USER@HOST[:PORT] [--id ID] [--name NAME]
   [--identity-file ABSOLUTE_PATH] [--prepend-path PATH_VALUE] [--password|--password-stdin|--clear-password]
   [--accept-host-key] [--json]
@@ -95,16 +100,25 @@ Create or update a host using explicit fields or a JSON object.
   codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL] [--prepend-path PATH_VALUE]
   codex-web-bridge thread send|wait|watch|interrupt|exit ...`,
   "thread list": "Usage: codex-web-bridge thread list [--json]\n\nList bridge-managed Codex threads.",
-  "thread get": "Usage: codex-web-bridge thread get THREAD_ID [--json]\n\nShow messages, pending requests, terminal state, and metadata.",
-  "thread create": "Usage: codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL] [--prepend-path PATH_VALUE] [--json]\n\nCreate a new Codex thread. The thread PATH prefix is placed before the host PATH prefix.",
-  "thread resume": "Usage: codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL] [--prepend-path PATH_VALUE] [--json]\n\nResume an existing Codex thread as a new bridge-managed record.",
-  "thread restore": "Usage: codex-web-bridge thread restore THREAD_ID [--json]\n\nRestart an exited bridge-managed thread in place.",
-  "thread delete": "Usage: codex-web-bridge thread delete THREAD_ID [--json]\n\nRemove the bridge record without deleting Codex history or stopping remote tmux.",
-  "thread send": "Usage: codex-web-bridge thread send THREAD_ID (--text TEXT | --text-file PATH) [--json]\n\nSend a new user message.",
-  "thread wait": "Usage: codex-web-bridge thread wait THREAD_ID [--timeout MILLISECONDS] [--json]\n\nWait until the thread becomes idle, waiting, exited, or errored.",
-  "thread watch": "Usage: codex-web-bridge thread watch THREAD_ID [--timeout MILLISECONDS] [--json]\n\nStream thread events until exit, error, timeout, or interruption.",
+  "thread get":
+    "Usage: codex-web-bridge thread get THREAD_ID [--json]\n\nShow messages, pending requests, terminal state, and metadata.",
+  "thread create":
+    "Usage: codex-web-bridge thread create --host HOST_ID --cwd ABSOLUTE_PATH [--proxy URL] [--prepend-path PATH_VALUE] [--json]\n\nCreate a new Codex thread. The thread PATH prefix is placed before the host PATH prefix.",
+  "thread resume":
+    "Usage: codex-web-bridge thread resume --host HOST_ID --codex-thread CODEX_ID --cwd ABSOLUTE_PATH [--proxy URL] [--prepend-path PATH_VALUE] [--json]\n\nResume an existing Codex thread as a new bridge-managed record.",
+  "thread restore":
+    "Usage: codex-web-bridge thread restore THREAD_ID [--json]\n\nRestart an exited bridge-managed thread in place.",
+  "thread delete":
+    "Usage: codex-web-bridge thread delete THREAD_ID [--json]\n\nRemove the bridge record without deleting Codex history or stopping remote tmux.",
+  "thread send":
+    "Usage: codex-web-bridge thread send THREAD_ID (--text TEXT | --text-file PATH) [--json]\n\nSend a new user message.",
+  "thread wait":
+    "Usage: codex-web-bridge thread wait THREAD_ID [--timeout MILLISECONDS] [--json]\n\nWait until the thread becomes idle, waiting, exited, or errored.",
+  "thread watch":
+    "Usage: codex-web-bridge thread watch THREAD_ID [--timeout MILLISECONDS] [--json]\n\nStream thread events until exit, error, timeout, or interruption.",
   "thread interrupt": "Usage: codex-web-bridge thread interrupt THREAD_ID [--json]\n\nInterrupt the active Codex turn.",
-  "thread exit": "Usage: codex-web-bridge thread exit THREAD_ID [--json]\n\nStop the tmux-backed runtime without deleting Codex history.",
+  "thread exit":
+    "Usage: codex-web-bridge thread exit THREAD_ID [--json]\n\nStop the tmux-backed runtime without deleting Codex history.",
   request: `Usage:
   codex-web-bridge request list THREAD_ID
   codex-web-bridge request get THREAD_ID REQUEST_ID
@@ -112,24 +126,33 @@ Create or update a host using explicit fields or a JSON object.
   codex-web-bridge request answer|resolve THREAD_ID REQUEST_ID (--input-json JSON | --input-file PATH)`,
   "request list": "Usage: codex-web-bridge request list THREAD_ID [--json]\n\nList pending requests for a thread.",
   "request get": "Usage: codex-web-bridge request get THREAD_ID REQUEST_ID [--json]\n\nShow a pending request.",
-  "request approve": "Usage: codex-web-bridge request approve THREAD_ID REQUEST_ID [--json]\n\nApprove a pending approval request.",
-  "request decline": "Usage: codex-web-bridge request decline THREAD_ID REQUEST_ID [--json]\n\nDecline a pending approval request.",
-  "request answer": "Usage: codex-web-bridge request answer THREAD_ID REQUEST_ID (--input-json JSON | --input-file PATH) [--json]\n\nAnswer Plan-mode or request_user_input questions.",
-  "request resolve": "Usage: codex-web-bridge request resolve THREAD_ID REQUEST_ID (--input-json JSON | --input-file PATH) [--json]\n\nResolve a pending request with a structured response.",
+  "request approve":
+    "Usage: codex-web-bridge request approve THREAD_ID REQUEST_ID [--json]\n\nApprove a pending approval request.",
+  "request decline":
+    "Usage: codex-web-bridge request decline THREAD_ID REQUEST_ID [--json]\n\nDecline a pending approval request.",
+  "request answer":
+    "Usage: codex-web-bridge request answer THREAD_ID REQUEST_ID (--input-json JSON | --input-file PATH) [--json]\n\nAnswer Plan-mode or request_user_input questions.",
+  "request resolve":
+    "Usage: codex-web-bridge request resolve THREAD_ID REQUEST_ID (--input-json JSON | --input-file PATH) [--json]\n\nResolve a pending request with a structured response.",
   terminal: `Usage:
   codex-web-bridge terminal screenshot THREAD_ID --output PNG_PATH
   codex-web-bridge terminal watch THREAD_ID [--timeout MILLISECONDS]
   codex-web-bridge terminal takeover|release THREAD_ID
   codex-web-bridge terminal input THREAD_ID (--data TEXT | --data-file PATH)`,
-  "terminal screenshot": "Usage: codex-web-bridge terminal screenshot THREAD_ID --output PNG_PATH [--json]\n\nRender the current terminal to a PNG file.",
-  "terminal watch": "Usage: codex-web-bridge terminal watch THREAD_ID [--timeout MILLISECONDS] [--json]\n\nStream raw terminal output. Status messages are written to stderr.",
-  "terminal takeover": "Usage: codex-web-bridge terminal takeover THREAD_ID [--json]\n\nAcquire a temporary terminal input lease.",
-  "terminal release": "Usage: codex-web-bridge terminal release THREAD_ID [--json]\n\nRelease the terminal input lease.",
-  "terminal input": "Usage: codex-web-bridge terminal input THREAD_ID (--data TEXT | --data-file PATH) [--json]\n\nSend input while holding the terminal takeover lease.",
+  "terminal screenshot":
+    "Usage: codex-web-bridge terminal screenshot THREAD_ID --output PNG_PATH [--json]\n\nRender the current terminal to a PNG file.",
+  "terminal watch":
+    "Usage: codex-web-bridge terminal watch THREAD_ID [--timeout MILLISECONDS] [--json]\n\nStream raw terminal output. Status messages are written to stderr.",
+  "terminal takeover":
+    "Usage: codex-web-bridge terminal takeover THREAD_ID [--json]\n\nAcquire a temporary terminal input lease.",
+  "terminal release":
+    "Usage: codex-web-bridge terminal release THREAD_ID [--json]\n\nRelease the terminal input lease.",
+  "terminal input":
+    "Usage: codex-web-bridge terminal input THREAD_ID (--data TEXT | --data-file PATH) [--json]\n\nSend input while holding the terminal takeover lease.",
 };
 
 export function helpText(argv: string[] = []): string {
-  const words = argv.filter(value => !value.startsWith("--")).slice(0, 2);
+  const words = argv.filter((value) => !value.startsWith("--")).slice(0, 2);
   if (words[0] === "daemon" && words[1]) {
     return commandHelp[words[1] === "url" ? "dashboard" : words[1]] ?? usage;
   }
@@ -146,7 +169,11 @@ function splitOptions(args: string[]): { positional: string[]; options: Options 
       continue;
     }
     if (options.has(value)) throw new UsageError(`option ${value} was provided more than once`);
-    if (["--json", "--foreground", "--password", "--password-stdin", "--clear-password", "--accept-host-key"].includes(value)) {
+    if (
+      ["--json", "--foreground", "--password", "--password-stdin", "--clear-password", "--accept-host-key"].includes(
+        value,
+      )
+    ) {
       options.set(value, true);
       continue;
     }
@@ -175,7 +202,7 @@ function integer(value: string | undefined, name: string, bounds?: [number, numb
   if (value === undefined) return;
   if (!/^\d+$/.test(value)) throw new UsageError(`${name} must be an integer`);
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || bounds && (parsed < bounds[0] || parsed > bounds[1])) {
+  if (!Number.isSafeInteger(parsed) || (bounds && (parsed < bounds[0] || parsed > bounds[1]))) {
     throw new UsageError(`${name} is outside its allowed range`);
   }
   return parsed;
@@ -198,7 +225,8 @@ function finish(command: Omit<ParsedCommand, "json">, options: Options, json: bo
 function structuredInput(options: Options): { inputJson?: string; inputFile?: string } {
   const inputJson = take(options, "--input-json");
   const inputFile = take(options, "--input-file");
-  if (inputJson !== undefined && inputFile !== undefined) throw new UsageError("--input-json and --input-file are mutually exclusive");
+  if (inputJson !== undefined && inputFile !== undefined)
+    throw new UsageError("--input-json and --input-file are mutually exclusive");
   return { inputJson, inputFile };
 }
 
@@ -210,38 +238,64 @@ export function parseBusinessCommand(argv: string[]): ParsedCommand {
   if (!group || !action) throw new UsageError(helpText());
 
   if (group === "host") {
-    if (action === "list") { none(positional); return finish({ method: "host.list", params: {}, stream: false }, options, json); }
-    if (action === "get") return finish({ method: "host.get", params: { hostId: one(positional, "host ID") }, stream: false }, options, json);
-    if (action === "delete") return finish({ method: "host.delete", params: { hostId: one(positional, "host ID") }, stream: false }, options, json);
-    if (action === "codex-threads") return finish({ method: "host.codexThreads", params: { hostId: one(positional, "host ID") }, stream: false }, options, json);
+    if (action === "list") {
+      none(positional);
+      return finish({ method: "host.list", params: {}, stream: false }, options, json);
+    }
+    if (action === "get")
+      return finish(
+        { method: "host.get", params: { hostId: one(positional, "host ID") }, stream: false },
+        options,
+        json,
+      );
+    if (action === "delete")
+      return finish(
+        { method: "host.delete", params: { hostId: one(positional, "host ID") }, stream: false },
+        options,
+        json,
+      );
+    if (action === "codex-threads")
+      return finish(
+        { method: "host.codexThreads", params: { hostId: one(positional, "host ID") }, stream: false },
+        options,
+        json,
+      );
     if (action === "add" || action === "upsert") {
       const target = action === "add" ? one(positional, "user@hostname[:port] target") : (none(positional), undefined);
       const input = structuredInput(options);
       const parsedTarget = target ? parseSshTarget(target) : undefined;
-      const params: Record<string, unknown> = input.inputJson !== undefined || input.inputFile !== undefined ? input : {
-        id: take(options, "--id", !target) ?? defaultHostId(parsedTarget!),
-        name: take(options, "--name", !target) ?? parsedTarget!.hostname,
-        ...(parsedTarget ?? {
-          hostname: take(options, "--hostname", true),
-          username: take(options, "--username", true),
-          port: integer(take(options, "--port") ?? "22", "--port", [1, 65535]),
-        }),
-        identityFile: take(options, "--identity-file"),
-        prependPath: take(options, "--prepend-path"),
-        hostKeySha256: take(options, "--host-key"),
-        passwordPrompt: flag(options, "--password"),
-        passwordStdin: flag(options, "--password-stdin"),
-        clearPassword: flag(options, "--clear-password"),
-        acceptHostKey: flag(options, "--accept-host-key"),
-      };
-      if (params.passwordPrompt && params.passwordStdin) throw new UsageError("--password and --password-stdin are mutually exclusive");
-      if (params.clearPassword && (params.passwordPrompt || params.passwordStdin)) throw new UsageError("--clear-password cannot be combined with password input");
+      const params: Record<string, unknown> =
+        input.inputJson !== undefined || input.inputFile !== undefined
+          ? input
+          : {
+              id: take(options, "--id", !target) ?? defaultHostId(parsedTarget!),
+              name: take(options, "--name", !target) ?? parsedTarget!.hostname,
+              ...(parsedTarget ?? {
+                hostname: take(options, "--hostname", true),
+                username: take(options, "--username", true),
+                port: integer(take(options, "--port") ?? "22", "--port", [1, 65535]),
+              }),
+              identityFile: take(options, "--identity-file"),
+              prependPath: take(options, "--prepend-path"),
+              hostKeySha256: take(options, "--host-key"),
+              passwordPrompt: flag(options, "--password"),
+              passwordStdin: flag(options, "--password-stdin"),
+              clearPassword: flag(options, "--clear-password"),
+              acceptHostKey: flag(options, "--accept-host-key"),
+            };
+      if (params.passwordPrompt && params.passwordStdin)
+        throw new UsageError("--password and --password-stdin are mutually exclusive");
+      if (params.clearPassword && (params.passwordPrompt || params.passwordStdin))
+        throw new UsageError("--clear-password cannot be combined with password input");
       return finish({ method: "host.upsert", params, stream: false }, options, json);
     }
   }
 
   if (group === "thread") {
-    if (action === "list") { none(positional); return finish({ method: "thread.list", params: {}, stream: false }, options, json); }
+    if (action === "list") {
+      none(positional);
+      return finish({ method: "thread.list", params: {}, stream: false }, options, json);
+    }
     if (["get", "exit", "restore", "delete", "interrupt"].includes(action)) {
       const threadId = one(positional, "thread ID");
       return finish({ method: `thread.${action}`, params: { threadId }, stream: false }, options, json);
@@ -250,49 +304,99 @@ export function parseBusinessCommand(argv: string[]): ParsedCommand {
       none(positional);
       const proxy = take(options, "--proxy");
       const prependPath = take(options, "--prepend-path");
-      return finish({ method: "thread.create", params: {
-        hostId: take(options, "--host", true), cwd: take(options, "--cwd", true), ...(proxy ? { proxy } : {}), ...(prependPath ? { prependPath } : {}),
-      }, stream: false }, options, json);
+      return finish(
+        {
+          method: "thread.create",
+          params: {
+            hostId: take(options, "--host", true),
+            cwd: take(options, "--cwd", true),
+            ...(proxy ? { proxy } : {}),
+            ...(prependPath ? { prependPath } : {}),
+          },
+          stream: false,
+        },
+        options,
+        json,
+      );
     }
     if (action === "resume") {
       none(positional);
       const proxy = take(options, "--proxy");
       const prependPath = take(options, "--prepend-path");
-      return finish({ method: "thread.resume", params: {
-        hostId: take(options, "--host", true), codexThreadId: take(options, "--codex-thread", true), cwd: take(options, "--cwd", true), ...(proxy ? { proxy } : {}), ...(prependPath ? { prependPath } : {}),
-      }, stream: false }, options, json);
+      return finish(
+        {
+          method: "thread.resume",
+          params: {
+            hostId: take(options, "--host", true),
+            codexThreadId: take(options, "--codex-thread", true),
+            cwd: take(options, "--cwd", true),
+            ...(proxy ? { proxy } : {}),
+            ...(prependPath ? { prependPath } : {}),
+          },
+          stream: false,
+        },
+        options,
+        json,
+      );
     }
     if (action === "send") {
       const threadId = one(positional, "thread ID");
       const text = take(options, "--text");
       const textFile = take(options, "--text-file");
-      if ((text === undefined) === (textFile === undefined)) throw new UsageError("provide exactly one of --text or --text-file");
+      if ((text === undefined) === (textFile === undefined))
+        throw new UsageError("provide exactly one of --text or --text-file");
       return finish({ method: "thread.send", params: { threadId, text, textFile }, stream: false }, options, json);
     }
     if (["wait", "watch"].includes(action)) {
       const threadId = one(positional, "thread ID");
       const timeoutMs = integer(take(options, "--timeout"), "--timeout", [1, 86_400_000]);
-      return finish({ method: `thread.${action}`, params: { threadId }, stream: action === "watch", timeoutMs }, options, json);
+      return finish(
+        { method: `thread.${action}`, params: { threadId }, stream: action === "watch", timeoutMs },
+        options,
+        json,
+      );
     }
   }
 
   if (group === "request") {
-    if (action === "list") return finish({ method: "request.list", params: { threadId: one(positional, "thread ID") }, stream: false }, options, json);
+    if (action === "list")
+      return finish(
+        { method: "request.list", params: { threadId: one(positional, "thread ID") }, stream: false },
+        options,
+        json,
+      );
     if (["get", "approve", "decline"].includes(action)) {
       if (positional.length !== 2) throw new UsageError("expected thread ID and request ID");
-      return finish({ method: `request.${action}`, params: { threadId: positional[0], requestId: positional[1] }, stream: false }, options, json);
+      return finish(
+        { method: `request.${action}`, params: { threadId: positional[0], requestId: positional[1] }, stream: false },
+        options,
+        json,
+      );
     }
     if (["resolve", "answer"].includes(action)) {
       if (positional.length !== 2) throw new UsageError("expected thread ID and request ID");
       const input = structuredInput(options);
-      if (input.inputJson === undefined && input.inputFile === undefined) throw new UsageError("provide --input-json or --input-file");
-      return finish({ method: `request.${action}`, params: { threadId: positional[0], requestId: positional[1], ...input }, stream: false }, options, json);
+      if (input.inputJson === undefined && input.inputFile === undefined)
+        throw new UsageError("provide --input-json or --input-file");
+      return finish(
+        {
+          method: `request.${action}`,
+          params: { threadId: positional[0], requestId: positional[1], ...input },
+          stream: false,
+        },
+        options,
+        json,
+      );
     }
   }
 
   if (group === "terminal") {
     if (["takeover", "release"].includes(action)) {
-      return finish({ method: `terminal.${action}`, params: { threadId: one(positional, "thread ID") }, stream: false }, options, json);
+      return finish(
+        { method: `terminal.${action}`, params: { threadId: one(positional, "thread ID") }, stream: false },
+        options,
+        json,
+      );
     }
     if (action === "screenshot") {
       const threadId = one(positional, "thread ID");
@@ -303,7 +407,8 @@ export function parseBusinessCommand(argv: string[]): ParsedCommand {
       const threadId = one(positional, "thread ID");
       const data = take(options, "--data");
       const dataFile = take(options, "--data-file");
-      if ((data === undefined) === (dataFile === undefined)) throw new UsageError("provide exactly one of --data or --data-file");
+      if ((data === undefined) === (dataFile === undefined))
+        throw new UsageError("provide exactly one of --data or --data-file");
       return finish({ method: "terminal.input", params: { threadId, data, dataFile }, stream: false }, options, json);
     }
     if (action === "watch") {
@@ -323,8 +428,11 @@ function parseSshTarget(value: string): { username: string; hostname: string; po
 }
 
 function defaultHostId(target: { username: string; hostname: string; port: number }): string {
-  const value = `${target.username}-${target.hostname}-${target.port}`.toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 128);
+  const value = `${target.username}-${target.hostname}-${target.port}`
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 128);
   if (!value) throw new UsageError("cannot derive a host ID; provide --id");
   return value;
 }

@@ -17,12 +17,12 @@ export async function terminateSpawnedDaemon(child: ChildProcess, graceMs = 1_00
   child.kill("SIGTERM");
   if (await waitForExit(child, graceMs)) return;
   child.kill("SIGKILL");
-  if (!await waitForExit(child, graceMs)) throw new Error("spawned daemon did not exit after SIGKILL");
+  if (!(await waitForExit(child, graceMs))) throw new Error("spawned daemon did not exit after SIGKILL");
 }
 
 function waitForExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const timeout = setTimeout(() => {
       child.off("exit", exited);
       resolve(false);

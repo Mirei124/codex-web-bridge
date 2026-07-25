@@ -46,8 +46,19 @@ function exitCode(code: string): number {
   if (normalized === "daemon_unavailable" || normalized === "not_running") return 3;
   if (normalized === "not_found" || normalized.endsWith("_not_found")) return 4;
   if (normalized === "conflict" || normalized === "invalid_state" || normalized.endsWith("already_resolved")) return 5;
-  if (["forbidden", "unauthorized", "security_error", "host_key_unknown", "host_key_changed", "host_key_rejected"].includes(normalized)) return 6;
-  if (["remote_error", "ssh_error", "codex_error", "runtime_failure", "ssh_host_key_scan_failed"].includes(normalized)) return 7;
+  if (
+    [
+      "forbidden",
+      "unauthorized",
+      "security_error",
+      "host_key_unknown",
+      "host_key_changed",
+      "host_key_rejected",
+    ].includes(normalized)
+  )
+    return 6;
+  if (["remote_error", "ssh_error", "codex_error", "runtime_failure", "ssh_host_key_scan_failed"].includes(normalized))
+    return 7;
   if (normalized === "timeout") return 8;
   if (normalized === "protocol_error" || normalized === "incompatible_version") return 9;
   return 10;
@@ -100,7 +111,12 @@ async function alive(value: number): Promise<boolean> {
 }
 
 function processExists(value: number): boolean {
-  try { process.kill(value, 0); return true; } catch { return false; }
+  try {
+    process.kill(value, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function clearStaleControlLock(): Promise<void> {
@@ -113,7 +129,10 @@ async function clearStaleControlLock(): Promise<void> {
     throw error;
   }
   if (Number.isSafeInteger(owner) && owner > 1 && processExists(owner)) {
-    throw new ControlRequestError({ code: "conflict", message: `daemon startup is already in progress (PID ${owner})` });
+    throw new ControlRequestError({
+      code: "conflict",
+      message: `daemon startup is already in progress (PID ${owner})`,
+    });
   }
   await unlink(lockPath);
 }
@@ -126,7 +145,8 @@ async function configure(args: string[]): Promise<{
   try {
     const config = await loadConfig();
     if (!args.includes("--reset-password")) return {};
-    if (option(args, "--password") !== undefined) throw new UsageError("--password and --reset-password are mutually exclusive");
+    if (option(args, "--password") !== undefined)
+      throw new UsageError("--password and --reset-password are mutually exclusive");
     const generatedPassword = randomBytes(24).toString("base64url");
     const current = { ...config, passwordHash: await hashPassword(generatedPassword) };
     await saveConfig(current);
@@ -135,7 +155,8 @@ async function configure(args: string[]): Promise<{
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const portText = option(args, "--port") ?? "3210";
-  if (!/^\d+$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535) throw new UsageError("--port must be an integer from 1 to 65535");
+  if (!/^\d+$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535)
+    throw new UsageError("--port must be an integer from 1 to 65535");
   const port = Number(portText);
   const suppliedPassword = option(args, "--password") ?? process.env.CWB_PASSWORD;
   const generatedPassword = suppliedPassword ? undefined : randomBytes(24).toString("base64url");
@@ -156,9 +177,10 @@ async function configure(args: string[]): Promise<{
 }
 
 function validateDaemonOptions(command: DaemonCommand, args: string[]): { json: boolean; foreground: boolean } {
-  const allowed = command === "start" || command === "restart"
-    ? new Set(["--json", "--foreground", "--accept-risk", "--reset-password", "--password", "--origin", "--port"])
-    : new Set(["--json"]);
+  const allowed =
+    command === "start" || command === "restart"
+      ? new Set(["--json", "--foreground", "--accept-risk", "--reset-password", "--password", "--origin", "--port"])
+      : new Set(["--json"]);
   let json = false;
   let foreground = false;
   const seen = new Set<string>();
@@ -167,11 +189,18 @@ function validateDaemonOptions(command: DaemonCommand, args: string[]): { json: 
     if (!value.startsWith("--") || !allowed.has(value)) throw new UsageError(`unknown option or argument: ${value}`);
     if (seen.has(value)) throw new UsageError(`${value} was provided more than once`);
     seen.add(value);
-    if (value === "--json") { json = true; continue; }
-    if (value === "--foreground") { foreground = true; continue; }
+    if (value === "--json") {
+      json = true;
+      continue;
+    }
+    if (value === "--foreground") {
+      foreground = true;
+      continue;
+    }
     if (value === "--accept-risk") continue;
     if (value === "--reset-password") continue;
-    if (args[index + 1] === undefined || args[index + 1]!.startsWith("--")) throw new UsageError(`option ${value} requires a value`);
+    if (args[index + 1] === undefined || args[index + 1]!.startsWith("--"))
+      throw new UsageError(`option ${value} requires a value`);
     index++;
   }
   return { json, foreground };
@@ -179,7 +208,8 @@ function validateDaemonOptions(command: DaemonCommand, args: string[]): { json: 
 
 async function start(args: string[], json: boolean, foreground: boolean, emit = true): Promise<void> {
   const old = await pid();
-  if (old && await alive(old)) throw new ControlRequestError({ code: "conflict", message: `already running (PID ${old})` });
+  if (old && (await alive(old)))
+    throw new ControlRequestError({ code: "conflict", message: `already running (PID ${old})` });
   if (old) await unlink(paths().pid).catch(() => undefined);
   await clearStaleControlLock();
   const configured = await configure(args);
@@ -187,12 +217,14 @@ async function start(args: string[], json: boolean, foreground: boolean, emit = 
   try {
     const config = await loadConfig();
     if (config.bindHost === "0.0.0.0") {
-      const message = "listening on 0.0.0.0 over HTTP can expose the dashboard password and conversation data. Use a trusted network or an HTTPS reverse proxy.";
+      const message =
+        "listening on 0.0.0.0 over HTTP can expose the dashboard password and conversation data. Use a trusted network or an HTTPS reverse proxy.";
       if (json) console.error(JSON.stringify({ schemaVersion: 1, ok: true, kind: "warning", data: { message } }));
       else console.error(`WARNING: ${message}`);
     }
     if (foreground) {
-      if (emit && configured.generatedPassword) success({ state: "starting", generatedPassword: configured.generatedPassword }, json, "result", "start");
+      if (emit && configured.generatedPassword)
+        success({ state: "starting", generatedPassword: configured.generatedPassword }, json, "result", "start");
       await import("./daemon.js");
       return;
     }
@@ -215,20 +247,28 @@ async function start(args: string[], json: boolean, foreground: boolean, emit = 
       const current = await pid();
       try {
         const ready = JSON.parse(await readFile(paths().ready, "utf8")) as { pid: number };
-        if (current && ready.pid === current && await alive(current)) {
+        if (current && ready.pid === current && (await alive(current))) {
           if (emit) {
-            success({
-              state: "running",
-              pid: current,
-              ...(configured.generatedPassword ? { generatedPassword: configured.generatedPassword } : {}),
-            }, json, "result", "start");
+            success(
+              {
+                state: "running",
+                pid: current,
+                ...(configured.generatedPassword ? { generatedPassword: configured.generatedPassword } : {}),
+              },
+              json,
+              "result",
+              "start",
+            );
           }
           return;
         }
       } catch {}
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    throw new ControlRequestError({ code: "daemon_unavailable", message: `daemon did not start; inspect ${paths().log}` });
+    throw new ControlRequestError({
+      code: "daemon_unavailable",
+      message: `daemon did not start; inspect ${paths().log}`,
+    });
   } catch (error) {
     if (child) await terminateSpawnedDaemon(child);
     await rollbackCreatedConfig(configured.createdConfig);
@@ -244,7 +284,7 @@ async function start(args: string[], json: boolean, foreground: boolean, emit = 
 
 async function stop(json: boolean, emit = true): Promise<{ state: "not_running" | "stopped"; pid?: number }> {
   const current = await pid();
-  if (!current || !await alive(current)) {
+  if (!current || !(await alive(current))) {
     if (current) await unlink(paths().pid).catch(() => undefined);
     const result = { state: "not_running" as const };
     if (emit) success(result, json, "result", "stop");
@@ -252,12 +292,13 @@ async function stop(json: boolean, emit = true): Promise<{ state: "not_running" 
   }
   process.kill(current, "SIGTERM");
   const deadline = Date.now() + 5000;
-  while (Date.now() < deadline && await alive(current)) await new Promise(resolve => setTimeout(resolve, 50));
+  while (Date.now() < deadline && (await alive(current))) await new Promise((resolve) => setTimeout(resolve, 50));
   if (await alive(current)) {
     process.kill(current, "SIGKILL");
     const killDeadline = Date.now() + 1000;
-    while (Date.now() < killDeadline && await alive(current)) await new Promise(resolve => setTimeout(resolve, 50));
-    if (await alive(current)) throw new ControlRequestError({ code: "timeout", message: `daemon PID ${current} survived SIGKILL` });
+    while (Date.now() < killDeadline && (await alive(current))) await new Promise((resolve) => setTimeout(resolve, 50));
+    if (await alive(current))
+      throw new ControlRequestError({ code: "timeout", message: `daemon PID ${current} survived SIGKILL` });
   }
   const result = { state: "stopped" as const, pid: current };
   if (emit) success(result, json, "result", "stop");
@@ -268,7 +309,7 @@ async function changePassword(password: string, json: boolean, generatedPassword
   const config = await loadConfig();
   const passwordHash = await hashPassword(validateDashboardPassword(password));
   const current = await pid();
-  const running = Boolean(current && await alive(current));
+  const running = Boolean(current && (await alive(current)));
   if (running) await stop(json, false);
   await saveConfig({ ...config, passwordHash });
   if (running) {
@@ -280,7 +321,12 @@ async function changePassword(password: string, json: boolean, generatedPassword
       throw error;
     }
   }
-  success({ ...(generatedPassword ? { generatedPassword } : {}), daemonRestarted: running }, json, "result", generatedPassword ? "password.reset" : "password.set");
+  success(
+    { ...(generatedPassword ? { generatedPassword } : {}), daemonRestarted: running },
+    json,
+    "result",
+    generatedPassword ? "password.reset" : "password.set",
+  );
 }
 
 async function resetPassword(json: boolean): Promise<void> {
@@ -327,15 +373,24 @@ async function hydrate(command: ParsedCommand): Promise<void> {
   if (typeof inputJson === "string" || typeof inputFile === "string") {
     const text = typeof inputJson === "string" ? inputJson : await readInputFile(inputFile as string);
     let input: unknown;
-    try { input = JSON.parse(text); } catch { throw new UsageError("structured input is not valid JSON"); }
-    if (!input || typeof input !== "object" || Array.isArray(input)) throw new UsageError("structured input must be a JSON object");
+    try {
+      input = JSON.parse(text);
+    } catch {
+      throw new UsageError("structured input is not valid JSON");
+    }
+    if (!input || typeof input !== "object" || Array.isArray(input))
+      throw new UsageError("structured input must be a JSON object");
     delete params.inputJson;
     delete params.inputFile;
     if (command.method === "request.resolve") params.response = input;
-    else if (command.method === "request.answer") params.answers = "answers" in input ? (input as Record<string, unknown>).answers : input;
+    else if (command.method === "request.answer")
+      params.answers = "answers" in input ? (input as Record<string, unknown>).answers : input;
     else Object.assign(params, input);
   }
-  for (const [fileKey, valueKey] of [["textFile", "text"], ["dataFile", "data"]] as const) {
+  for (const [fileKey, valueKey] of [
+    ["textFile", "text"],
+    ["dataFile", "data"],
+  ] as const) {
     const file = params[fileKey];
     if (typeof file === "string") {
       params[valueKey] = await readInputFile(file);
@@ -357,30 +412,50 @@ async function runBusiness(args: string[]): Promise<void> {
   await hydrate(command);
   const socketPath = paths().controlSocket;
   const renderEvent = (event: unknown) => success(event, command.json, "event", command.method, command.params);
-  const request = () => controlRequest(socketPath, command.method, command.params, {
+  const request = () =>
+    controlRequest(socketPath, command.method, command.params, {
       stream: command.stream,
-      timeoutMs: command.timeoutMs ?? (command.method === "thread.wait" ? 600_000 : command.stream ? 86_400_000 : undefined),
+      timeoutMs:
+        command.timeoutMs ?? (command.method === "thread.wait" ? 600_000 : command.stream ? 86_400_000 : undefined),
       onEvent: renderEvent,
     });
   let result: unknown;
   try {
     result = await request();
   } catch (error) {
-    if (!(error instanceof ControlRequestError) || error.controlError.code !== "HOST_KEY_UNKNOWN" || command.method !== "host.upsert" || !process.stdin.isTTY || command.json) throw error;
-    const fingerprint = (error.controlError.details as { fingerprint?: string } | undefined)?.fingerprint ?? "unknown fingerprint";
+    if (
+      !(error instanceof ControlRequestError) ||
+      error.controlError.code !== "HOST_KEY_UNKNOWN" ||
+      command.method !== "host.upsert" ||
+      !process.stdin.isTTY ||
+      command.json
+    )
+      throw error;
+    const fingerprint =
+      (error.controlError.details as { fingerprint?: string } | undefined)?.fingerprint ?? "unknown fingerprint";
     const prompt = createInterface({ input: process.stdin, output: process.stderr });
     const answer = await prompt.question(`Unknown SSH host key ${fingerprint}. Trust and save it? [y/N] `);
     prompt.close();
-    if (!/^y(?:es)?$/i.test(answer.trim())) throw new ControlRequestError({ code: "HOST_KEY_REJECTED", message: "SSH host key was not accepted", retryable: false });
+    if (!/^y(?:es)?$/i.test(answer.trim()))
+      throw new ControlRequestError({
+        code: "HOST_KEY_REJECTED",
+        message: "SSH host key was not accepted",
+        retryable: false,
+      });
     command.params.acceptHostKey = true;
     result = await request();
   }
   if (command.output) {
-    const encoded = typeof result === "string"
-      ? result
-      : (result as { data?: string; pngBase64?: string } | undefined)?.data
-        ?? (result as { pngBase64?: string } | undefined)?.pngBase64;
-    if (typeof encoded !== "string") throw new ControlRequestError({ code: "protocol_error", message: "screenshot response did not contain base64 image data" });
+    const encoded =
+      typeof result === "string"
+        ? result
+        : ((result as { data?: string; pngBase64?: string } | undefined)?.data ??
+          (result as { pngBase64?: string } | undefined)?.pngBase64);
+    if (typeof encoded !== "string")
+      throw new ControlRequestError({
+        code: "protocol_error",
+        message: "screenshot response did not contain base64 image data",
+      });
     await writeFile(command.output, Buffer.from(encoded, "base64"), { mode: 0o600 });
     success({ path: command.output }, command.json, "result", command.method, command.params);
   } else if (!command.stream || result !== undefined) {
@@ -408,8 +483,9 @@ async function main(): Promise<void> {
   if (args[0] === "password") {
     const action = args[1];
     const json = args.includes("--json");
-    if (args.filter(value => value === "--json").length > 1) throw new UsageError("option --json was provided more than once");
-    if (action === "reset" && args.slice(2).every(value => value === "--json")) {
+    if (args.filter((value) => value === "--json").length > 1)
+      throw new UsageError("option --json was provided more than once");
+    if (action === "reset" && args.slice(2).every((value) => value === "--json")) {
       await resetPassword(json);
       return;
     }
@@ -417,21 +493,41 @@ async function main(): Promise<void> {
       await changePassword(args[2]!, json);
       return;
     }
-    throw new UsageError("Usage: codex-web-bridge password reset [--json]\n       codex-web-bridge password set NEW_PASSWORD [--json]");
+    throw new UsageError(
+      "Usage: codex-web-bridge password reset [--json]\n       codex-web-bridge password set NEW_PASSWORD [--json]",
+    );
   }
   const command = (args[0] ?? "help") as DaemonCommand;
   if (["start", "stop", "restart", "status", "dashboard", "help"].includes(command)) {
     const commandArgs = args.slice(1);
     const { json, foreground } = validateDaemonOptions(command, commandArgs);
     if (command === "start" || command === "restart") await validateExplicitStartPassword(commandArgs);
-    if (command === "help") { success({ usage: helpText() }, json, "result", "help"); return; }
-    if (command === "start") { await start(commandArgs, json, foreground); return; }
-    if (command === "stop") { await stop(json); return; }
-    if (command === "restart") { await stop(json, false); await start(commandArgs, json, foreground); return; }
+    if (command === "help") {
+      success({ usage: helpText() }, json, "result", "help");
+      return;
+    }
+    if (command === "start") {
+      await start(commandArgs, json, foreground);
+      return;
+    }
+    if (command === "stop") {
+      await stop(json);
+      return;
+    }
+    if (command === "restart") {
+      await stop(json, false);
+      await start(commandArgs, json, foreground);
+      return;
+    }
     if (command === "status") {
       const current = await pid();
-      const running = Boolean(current && await alive(current));
-      success({ state: running ? "running" : "not_running", ...(running ? { pid: current } : {}) }, json, "result", "status");
+      const running = Boolean(current && (await alive(current)));
+      success(
+        { state: running ? "running" : "not_running", ...(running ? { pid: current } : {}) },
+        json,
+        "result",
+        "status",
+      );
       process.exitCode = running ? 0 : 3;
       return;
     }
@@ -442,13 +538,14 @@ async function main(): Promise<void> {
   await runBusiness(args);
 }
 
-main().catch(error => {
+main().catch((error) => {
   const json = rawArgs.includes("--json");
-  const detail: ControlError = error instanceof ControlRequestError
-    ? error.controlError
-    : error instanceof UsageError
-      ? { code: "usage_error", message: error.message }
-      : { code: "internal_error", message: error instanceof Error ? error.message : String(error) };
+  const detail: ControlError =
+    error instanceof ControlRequestError
+      ? error.controlError
+      : error instanceof UsageError
+        ? { code: "usage_error", message: error.message }
+        : { code: "internal_error", message: error instanceof Error ? error.message : String(error) };
   failure(detail, json);
   process.exitCode = exitCode(detail.code);
 });

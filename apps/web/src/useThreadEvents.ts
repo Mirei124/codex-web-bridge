@@ -21,7 +21,10 @@ export function useThreadEvents(threadIds: string[], onEvent: (event: ServerEven
       const csrf = currentCsrfToken();
       const query = csrf ? `?csrf=${encodeURIComponent(csrf)}` : "";
       socket = new WebSocket(`${scheme}//${location.host}/api/events${query}`);
-      socket.onopen = () => { attempt = 0; for (const threadId of subscribedThreadIds) send({ type: "subscribe", threadId }); };
+      socket.onopen = () => {
+        attempt = 0;
+        for (const threadId of subscribedThreadIds) send({ type: "subscribe", threadId });
+      };
       socket.onmessage = ({ data }) => handler.current(JSON.parse(String(data)) as ServerEvent);
       socket.onclose = () => {
         if (stopped) return;
@@ -32,7 +35,8 @@ export function useThreadEvents(threadIds: string[], onEvent: (event: ServerEven
     return () => {
       stopped = true;
       if (retry) clearTimeout(retry);
-      if (socket?.readyState === WebSocket.OPEN) for (const threadId of subscribedThreadIds) send({ type: "unsubscribe", threadId });
+      if (socket?.readyState === WebSocket.OPEN)
+        for (const threadId of subscribedThreadIds) send({ type: "unsubscribe", threadId });
       socket?.close();
     };
   }, [subscriptionKey]);

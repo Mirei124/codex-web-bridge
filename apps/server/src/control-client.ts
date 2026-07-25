@@ -44,15 +44,21 @@ export async function controlRequest(
       if (error) reject(error);
       else resolve(result);
     };
-    const timer = setTimeout(() => finish(new ControlRequestError({
-      code: "timeout",
-      message: `control request timed out after ${timeoutMs}ms`,
-      retryable: true,
-    })), timeoutMs);
+    const timer = setTimeout(
+      () =>
+        finish(
+          new ControlRequestError({
+            code: "timeout",
+            message: `control request timed out after ${timeoutMs}ms`,
+            retryable: true,
+          }),
+        ),
+      timeoutMs,
+    );
     socket.once("connect", () => {
       socket.write(`${JSON.stringify({ version: 1, id, method, params })}\n`);
     });
-    socket.on("data", chunk => {
+    socket.on("data", (chunk) => {
       buffer += chunk.toString("utf8");
       for (;;) {
         const newline = buffer.indexOf("\n");
@@ -84,16 +90,24 @@ export async function controlRequest(
         }
       }
     });
-    socket.once("error", error => {
+    socket.once("error", (error) => {
       const nodeError = error as NodeJS.ErrnoException;
-      finish(new ControlRequestError({
-        code: ["ENOENT", "ECONNREFUSED"].includes(nodeError.code ?? "") ? "daemon_unavailable" : "io_error",
-        message: nodeError.code === "ENOENT" ? "daemon is not running" : error.message,
-        retryable: true,
-      }));
+      finish(
+        new ControlRequestError({
+          code: ["ENOENT", "ECONNREFUSED"].includes(nodeError.code ?? "") ? "daemon_unavailable" : "io_error",
+          message: nodeError.code === "ENOENT" ? "daemon is not running" : error.message,
+          retryable: true,
+        }),
+      );
     });
     socket.once("end", () => {
-      if (!settled) finish(new ControlRequestError({ code: "protocol_error", message: "daemon closed the control connection before responding" }));
+      if (!settled)
+        finish(
+          new ControlRequestError({
+            code: "protocol_error",
+            message: "daemon closed the control connection before responding",
+          }),
+        );
     });
   });
 }

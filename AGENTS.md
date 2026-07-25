@@ -89,3 +89,6 @@
 - Headless canvas does not reliably resolve the CSS generic `monospace` family.
   Choose an installed concrete monospace/CJK font and render screenshots at the
   actual tmux pane dimensions.
+- Keep repository-wide formatting centralized in the root Prettier config and root
+  `pnpm format` / `pnpm format:check` scripts so every workspace uses the same
+  formatter behavior.

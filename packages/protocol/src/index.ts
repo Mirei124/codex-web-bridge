@@ -108,8 +108,13 @@ export interface ThreadDetail extends ThreadSummary {
   terminal: { connected: boolean; takeover: boolean; owner?: string };
 }
 
-export interface LoginRequest { password: string }
-export interface SessionResponse { authenticated: boolean; csrfToken?: string }
+export interface LoginRequest {
+  password: string;
+}
+export interface SessionResponse {
+  authenticated: boolean;
+  csrfToken?: string;
+}
 export interface SettingsResponse {
   bindHost: "127.0.0.1" | "0.0.0.0";
   port: number;
@@ -123,10 +128,23 @@ export interface UpdateSettingsRequest {
   publicOrigin: string;
   newPassword?: string;
 }
-export interface CreateThreadRequest { hostId: string; cwd: string; proxy?: string; prependPath?: string }
+export interface CreateThreadRequest {
+  hostId: string;
+  cwd: string;
+  proxy?: string;
+  prependPath?: string;
+}
 export type ThreadCreateDefaults = CreateThreadRequest;
-export interface ResumeThreadRequest { hostId: string; codexThreadId: string; cwd: string; proxy?: string; prependPath?: string }
-export interface SendMessageRequest { text: string }
+export interface ResumeThreadRequest {
+  hostId: string;
+  codexThreadId: string;
+  cwd: string;
+  proxy?: string;
+  prependPath?: string;
+}
+export interface SendMessageRequest {
+  text: string;
+}
 export interface ResolveRequest {
   value?: string;
   approved?: boolean;
@@ -147,9 +165,7 @@ export type ServerEvent =
   | { type: "error"; threadId?: string; message: string };
 
 export function serverEventThreadId(event: ServerEvent): string | undefined {
-  return event.type === "snapshot" || event.type === "thread.updated"
-    ? event.thread.id
-    : event.threadId;
+  return event.type === "snapshot" || event.type === "thread.updated" ? event.thread.id : event.threadId;
 }
 
 export type ClientEvent =
@@ -159,15 +175,35 @@ export type ClientEvent =
   | { type: "terminal.input"; threadId: string; data: string };
 
 export const controlMethods = [
-  "host.list", "host.get", "host.upsert", "host.delete", "host.codexThreads",
-  "thread.list", "thread.get", "thread.create", "thread.resume", "thread.restore", "thread.exit", "thread.delete",
-  "thread.send", "thread.interrupt", "thread.wait", "thread.watch",
-  "request.list", "request.get", "request.resolve", "request.approve",
-  "request.decline", "request.answer",
-  "terminal.screenshot", "terminal.watch", "terminal.takeover",
-  "terminal.release", "terminal.input",
+  "host.list",
+  "host.get",
+  "host.upsert",
+  "host.delete",
+  "host.codexThreads",
+  "thread.list",
+  "thread.get",
+  "thread.create",
+  "thread.resume",
+  "thread.restore",
+  "thread.exit",
+  "thread.delete",
+  "thread.send",
+  "thread.interrupt",
+  "thread.wait",
+  "thread.watch",
+  "request.list",
+  "request.get",
+  "request.resolve",
+  "request.approve",
+  "request.decline",
+  "request.answer",
+  "terminal.screenshot",
+  "terminal.watch",
+  "terminal.takeover",
+  "terminal.release",
+  "terminal.input",
 ] as const;
-export type ControlMethod = typeof controlMethods[number];
+export type ControlMethod = (typeof controlMethods)[number];
 export interface ControlRequest {
   version: 1;
   id: string;
@@ -181,8 +217,7 @@ export interface ControlError {
   details?: unknown;
 }
 export type ControlResponse =
-  | { version: 1; id: string; ok: true; result: unknown }
-  | { version: 1; id: string; ok: false; error: ControlError };
+  { version: 1; id: string; ok: true; result: unknown } | { version: 1; id: string; ok: false; error: ControlError };
 export interface ControlEvent {
   version: 1;
   id: string;

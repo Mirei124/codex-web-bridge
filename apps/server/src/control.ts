@@ -46,7 +46,7 @@ export class ControlServer {
     private readonly storage: Storage,
     private readonly app: FastifyInstance,
   ) {
-    this.server = createServer(socket => this.connect(socket));
+    this.server = createServer((socket) => this.connect(socket));
   }
 
   async listen(): Promise<void> {
@@ -59,13 +59,19 @@ export class ControlServer {
       try {
         const entry = await lstat(this.socketPath);
         if (!entry.isSocket()) throw new Error(`control path exists and is not a socket: ${this.socketPath}`);
-        if (await socketAcceptsConnections(this.socketPath)) throw new Error(`control socket is already active: ${this.socketPath}`);
+        if (await socketAcceptsConnections(this.socketPath))
+          throw new Error(`control socket is already active: ${this.socketPath}`);
         await unlink(this.socketPath);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
       const now = Date.now();
-      this.storage.createSession({ id: this.sessionId, csrfToken: this.csrfToken, createdAt: now, expiresAt: Number.MAX_SAFE_INTEGER });
+      this.storage.createSession({
+        id: this.sessionId,
+        csrfToken: this.csrfToken,
+        createdAt: now,
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      });
       try {
         await new Promise<void>((resolve, reject) => {
           this.server.once("error", reject);
@@ -79,7 +85,7 @@ export class ControlServer {
       } catch (error) {
         this.storage.deleteSession(this.sessionId);
         if (bound) {
-          await new Promise<void>(resolve => this.server.close(() => resolve()));
+          await new Promise<void>((resolve) => this.server.close(() => resolve()));
           await unlink(this.socketPath).catch(() => undefined);
         }
         throw error;
@@ -105,8 +111,9 @@ export class ControlServer {
       await this.release({ sessionId: this.sessionId, csrfToken: this.csrfToken });
     }
     for (const client of this.clients) client.socket.destroy();
-    if (this.server.listening) await new Promise<void>((resolve, reject) => this.server.close(error => error ? reject(error) : resolve()));
-    await unlink(this.socketPath).catch(error => {
+    if (this.server.listening)
+      await new Promise<void>((resolve, reject) => this.server.close((error) => (error ? reject(error) : resolve())));
+    await unlink(this.socketPath).catch((error) => {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     });
   }
@@ -121,7 +128,7 @@ export class ControlServer {
     };
     this.clients.add(state);
     socket.setEncoding("utf8");
-    socket.on("data", chunk => this.consume(state, String(chunk)));
+    socket.on("data", (chunk) => this.consume(state, String(chunk)));
     socket.on("close", () => {
       this.clients.delete(state);
     });
@@ -156,37 +163,65 @@ export class ControlServer {
     let request: ControlRequest;
     try {
       request = JSON.parse(line) as ControlRequest;
-      if (request.version !== 1 || typeof request.id !== "string" || !request.id || !controlMethods.includes(request.method)) {
+      if (
+        request.version !== 1 ||
+        typeof request.id !== "string" ||
+        !request.id ||
+        !controlMethods.includes(request.method)
+      ) {
         throw new ControlFailure("INVALID_REQUEST", "invalid control request", false);
       }
       const result = await this.dispatch(state, request.id, request.method, request.params ?? {});
-      if (result !== streaming) this.write(state, { version: 1, id: request.id, ok: true, result } satisfies ControlResponse);
+      if (result !== streaming)
+        this.write(state, { version: 1, id: request.id, ok: true, result } satisfies ControlResponse);
     } catch (error) {
       const failure = normalizeError(error);
-      this.write(state, { version: 1, id: typeof request!?.id === "string" ? request.id : "", ok: false, error: failure } satisfies ControlResponse);
+      this.write(state, {
+        version: 1,
+        id: typeof request!?.id === "string" ? request.id : "",
+        ok: false,
+        error: failure,
+      } satisfies ControlResponse);
     }
   }
 
-  private async dispatch(state: ClientState, requestId: string, method: ControlRequest["method"], params: Record<string, unknown>): Promise<unknown> {
+  private async dispatch(
+    state: ClientState,
+    requestId: string,
+    method: ControlRequest["method"],
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
     if (method === "host.list") return this.inject(state, "GET", apiRoutes.hosts);
-    if (method === "host.get") return findById(await this.inject(state, "GET", apiRoutes.hosts), idParam(params), "HOST_NOT_FOUND");
+    if (method === "host.get")
+      return findById(await this.inject(state, "GET", apiRoutes.hosts), idParam(params), "HOST_NOT_FOUND");
     if (method === "host.upsert") {
       const host = { ...((params.host ?? params) as Record<string, unknown>) };
       const verified = await verifyHostKey(host, Boolean(host.acceptHostKey));
       delete host.acceptHostKey;
-      return this.inject(state, "POST", apiRoutes.hosts, { ...host, hostKeySha256: verified.fingerprint, acceptHostKey: true });
+      return this.inject(state, "POST", apiRoutes.hosts, {
+        ...host,
+        hostKeySha256: verified.fingerprint,
+        acceptHostKey: true,
+      });
     }
-    if (method === "host.delete") return this.inject(state,"DELETE",`${apiRoutes.hosts}/${encodeURIComponent(idParam(params))}`);
+    if (method === "host.delete")
+      return this.inject(state, "DELETE", `${apiRoutes.hosts}/${encodeURIComponent(idParam(params))}`);
     if (method === "host.codexThreads") return this.inject(state, "GET", apiRoutes.hostCodexThreads(idParam(params)));
     if (method === "thread.list") return this.inject(state, "GET", apiRoutes.threads);
     if (method === "thread.get") return this.thread(state, idParam(params));
     if (method === "thread.create") return this.inject(state, "POST", apiRoutes.threads, params);
     if (method === "thread.resume") return this.inject(state, "POST", apiRoutes.resumeThread, params);
     if (method === "thread.restore") return this.inject(state, "POST", apiRoutes.resumeExitedThread(idParam(params)));
-    if (method === "thread.exit") return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/exit`);
-    if (method === "thread.delete") return this.inject(state, "DELETE", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}`);
-    if (method === "thread.send") return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/messages`, { text: stringParam(params, "text") });
-    if (method === "thread.interrupt") return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/interrupt`);
+    if (method === "thread.exit")
+      return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/exit`);
+    if (method === "thread.delete")
+      return this.inject(state, "DELETE", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}`);
+    if (method === "thread.send")
+      return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/messages`, {
+        text: stringParam(params, "text"),
+      });
+    if (method === "thread.interrupt")
+      return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/interrupt`);
     if (method === "thread.watch" || method === "thread.wait" || method === "terminal.watch") {
       const threadId = idParam(params);
       const subscription: Subscription = {
@@ -204,12 +239,20 @@ export class ControlServer {
         state.subscriptions.delete(threadId);
         throw error;
       }
-      if (method !== "thread.wait") this.write(state, { version: 1, id: requestId, event: { type: "snapshot", thread: snapshot } } satisfies ControlEvent);
+      if (method !== "thread.wait")
+        this.write(state, {
+          version: 1,
+          id: requestId,
+          event: { type: "snapshot", thread: snapshot },
+        } satisfies ControlEvent);
       let current = snapshot;
       for (;;) {
         const queued = subscription.queued.splice(0);
         for (const event of queued) {
-          if (subscription.mode === "thread" || subscription.mode === "terminal" && (event.type === "terminal.data" || event.type === "terminal.state")) {
+          if (
+            subscription.mode === "thread" ||
+            (subscription.mode === "terminal" && (event.type === "terminal.data" || event.type === "terminal.state"))
+          ) {
             this.write(state, { version: 1, id: subscription.id, event } satisfies ControlEvent);
           }
           if (event.type === "thread.updated") current = { ...current, ...event.thread };
@@ -227,7 +270,13 @@ export class ControlServer {
       }
     }
     if (method === "request.list") return (await this.thread(state, stringParam(params, "threadId"))).pendingRequests;
-    if (method === "request.get") return findById((await this.thread(state, stringParam(params, "threadId"))).pendingRequests, stringParam(params, "requestId"), "REQUEST_NOT_FOUND", "requestId");
+    if (method === "request.get")
+      return findById(
+        (await this.thread(state, stringParam(params, "threadId"))).pendingRequests,
+        stringParam(params, "requestId"),
+        "REQUEST_NOT_FOUND",
+        "requestId",
+      );
     if (method.startsWith("request.")) {
       const threadId = stringParam(params, "threadId");
       const requestId = stringParam(params, "requestId");
@@ -235,18 +284,35 @@ export class ControlServer {
       if (method === "request.approve") body = { approved: true };
       else if (method === "request.decline") body = { approved: false };
       else if (method === "request.answer") body = { answers: objectParam(params, "answers") };
-      else body = params.response ?? Object.fromEntries(Object.entries(params).filter(([key]) => key !== "threadId" && key !== "requestId"));
-      return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(threadId)}/requests/${encodeURIComponent(requestId)}`, body);
+      else
+        body =
+          params.response ??
+          Object.fromEntries(Object.entries(params).filter(([key]) => key !== "threadId" && key !== "requestId"));
+      return this.inject(
+        state,
+        "POST",
+        `${apiRoutes.threads}/${encodeURIComponent(threadId)}/requests/${encodeURIComponent(requestId)}`,
+        body,
+      );
     }
     if (method === "terminal.screenshot") {
-      const result = await this.injectRaw(state, "GET", `${apiRoutes.threads}/${encodeURIComponent(stringParam(params, "threadId"))}/terminal/screenshot`);
+      const result = await this.injectRaw(
+        state,
+        "GET",
+        `${apiRoutes.threads}/${encodeURIComponent(stringParam(params, "threadId"))}/terminal/screenshot`,
+      );
       return { mimeType: result.contentType, data: result.body.toString("base64") };
     }
     if (method === "terminal.takeover" || method === "terminal.release") {
-      return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(stringParam(params, "threadId"))}/terminal/takeover`, {
-        enabled: method === "terminal.takeover",
-        ...(method === "terminal.takeover" ? { ttlMs: 300_000 } : {}),
-      });
+      return this.inject(
+        state,
+        "POST",
+        `${apiRoutes.threads}/${encodeURIComponent(stringParam(params, "threadId"))}/terminal/takeover`,
+        {
+          enabled: method === "terminal.takeover",
+          ...(method === "terminal.takeover" ? { ttlMs: 300_000 } : {}),
+        },
+      );
     }
     if (method === "terminal.input") {
       const threadId = stringParam(params, "threadId");
@@ -264,28 +330,49 @@ export class ControlServer {
 
   private deliver(state: ClientState, threadId: string, subscription: Subscription, event: ServerEvent): void {
     const terminal = event.type === "thread.updated" && endsSubscription(subscription.mode, event.thread.status);
-    if (subscription.mode === "thread" || subscription.mode === "terminal" && (event.type === "terminal.data" || event.type === "terminal.state")) {
+    if (
+      subscription.mode === "thread" ||
+      (subscription.mode === "terminal" && (event.type === "terminal.data" || event.type === "terminal.state"))
+    ) {
       this.write(state, { version: 1, id: subscription.id, event } satisfies ControlEvent);
     }
     if (!terminal || subscription.finishing) return;
     subscription.finishing = true;
     state.subscriptions.delete(threadId);
-    void this.thread(state, threadId).then(detail => {
-      if (event.type === "thread.updated") detail = { ...detail, ...event.thread };
-      if (subscription.mode === "wait") this.write(state, { version: 1, id: subscription.id, ok: true, result: detail } satisfies ControlResponse);
-      else this.write(state, { version: 1, id: subscription.id, done: true, result: detail } satisfies ControlDone);
-    }).catch(error => {
-      this.write(state, { version: 1, id: subscription.id, ok: false, error: normalizeError(error) } satisfies ControlResponse);
-    });
+    void this.thread(state, threadId)
+      .then((detail) => {
+        if (event.type === "thread.updated") detail = { ...detail, ...event.thread };
+        if (subscription.mode === "wait")
+          this.write(state, { version: 1, id: subscription.id, ok: true, result: detail } satisfies ControlResponse);
+        else this.write(state, { version: 1, id: subscription.id, done: true, result: detail } satisfies ControlDone);
+      })
+      .catch((error) => {
+        this.write(state, {
+          version: 1,
+          id: subscription.id,
+          ok: false,
+          error: normalizeError(error),
+        } satisfies ControlResponse);
+      });
   }
 
-  private async inject(state: Pick<ClientState, "sessionId" | "csrfToken">, method: "GET" | "POST" | "DELETE", url: string, payload?: unknown): Promise<any> {
+  private async inject(
+    state: Pick<ClientState, "sessionId" | "csrfToken">,
+    method: "GET" | "POST" | "DELETE",
+    url: string,
+    payload?: unknown,
+  ): Promise<any> {
     const result = await this.injectRaw(state, method, url, payload);
     if (result.body.length === 0) return {};
     return JSON.parse(result.body.toString("utf8"));
   }
 
-  private async injectRaw(state: Pick<ClientState, "sessionId" | "csrfToken">, method: "GET" | "POST" | "DELETE", url: string, payload?: unknown) {
+  private async injectRaw(
+    state: Pick<ClientState, "sessionId" | "csrfToken">,
+    method: "GET" | "POST" | "DELETE",
+    url: string,
+    payload?: unknown,
+  ) {
     const options: InjectOptions = {
       method,
       url,
@@ -301,8 +388,21 @@ export class ControlServer {
     const response = await this.app.inject(options);
     if (response.statusCode >= 400) {
       const body = response.json() as { error?: string; message?: string };
-      const code = response.statusCode === 404 ? "NOT_FOUND" : response.statusCode === 409 ? "CONFLICT" : response.statusCode === 403 ? "FORBIDDEN" : response.statusCode >= 500 ? "RUNTIME_FAILURE" : "INVALID_ARGUMENT";
-      throw new ControlFailure(code, body.message ?? body.error ?? `request failed (${response.statusCode})`, response.statusCode >= 500);
+      const code =
+        response.statusCode === 404
+          ? "NOT_FOUND"
+          : response.statusCode === 409
+            ? "CONFLICT"
+            : response.statusCode === 403
+              ? "FORBIDDEN"
+              : response.statusCode >= 500
+                ? "RUNTIME_FAILURE"
+                : "INVALID_ARGUMENT";
+      throw new ControlFailure(
+        code,
+        body.message ?? body.error ?? `request failed (${response.statusCode})`,
+        response.statusCode >= 500,
+      );
     }
     return { body: response.rawPayload, contentType: response.headers["content-type"] };
   }
@@ -315,20 +415,38 @@ export class ControlServer {
 const streaming = Symbol("streaming");
 
 class ControlFailure extends Error {
-  constructor(readonly code: string, message: string, readonly retryable: boolean, readonly details?: unknown) {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly retryable: boolean,
+    readonly details?: unknown,
+  ) {
     super(message);
   }
 }
 
 function normalizeError(error: unknown): ControlError {
-  if (error instanceof ControlFailure) return { code: error.code, message: error.message, retryable: error.retryable, ...(error.details === undefined ? {} : { details: error.details }) };
-  if (error instanceof HostKeyError) return { code: error.code, message: error.message, retryable: error.retryable, ...(error.details === undefined ? {} : { details: error.details }) };
+  if (error instanceof ControlFailure)
+    return {
+      code: error.code,
+      message: error.message,
+      retryable: error.retryable,
+      ...(error.details === undefined ? {} : { details: error.details }),
+    };
+  if (error instanceof HostKeyError)
+    return {
+      code: error.code,
+      message: error.message,
+      retryable: error.retryable,
+      ...(error.details === undefined ? {} : { details: error.details }),
+    };
   return { code: "INTERNAL_ERROR", message: error instanceof Error ? error.message : String(error), retryable: false };
 }
 
 function stringParam(params: Record<string, unknown>, name: string): string {
   const value = params[name];
-  if (typeof value !== "string" || !value) throw new ControlFailure("INVALID_ARGUMENT", `${name} must be a non-empty string`, false);
+  if (typeof value !== "string" || !value)
+    throw new ControlFailure("INVALID_ARGUMENT", `${name} must be a non-empty string`, false);
   return value;
 }
 
@@ -340,27 +458,30 @@ function idParam(params: Record<string, unknown>): string {
 
 function objectParam(params: Record<string, unknown>, name: string): Record<string, unknown> {
   const value = params[name];
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ControlFailure("INVALID_ARGUMENT", `${name} must be an object`, false);
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new ControlFailure("INVALID_ARGUMENT", `${name} must be an object`, false);
   return value as Record<string, unknown>;
 }
 
 function findById(value: unknown, id: string, code: string, key = "id"): unknown {
   if (!Array.isArray(value)) throw new ControlFailure("INTERNAL_ERROR", "expected a list response", false);
-  const match = value.find(item => item && typeof item === "object" && (item as Record<string, unknown>)[key] === id);
+  const match = value.find((item) => item && typeof item === "object" && (item as Record<string, unknown>)[key] === id);
   if (!match) throw new ControlFailure(code, `${id} was not found`, false);
   return match;
 }
 
 function endsSubscription(mode: Subscription["mode"], status: ThreadDetail["status"]): boolean {
-  return status === "exited" || status === "error"
-    || mode === "wait" && (status === "idle" || status === "waiting");
+  return status === "exited" || status === "error" || (mode === "wait" && (status === "idle" || status === "waiting"));
 }
 
 function socketAcceptsConnections(path: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const socket = connect(path);
-    socket.once("connect", () => { socket.destroy(); resolve(true); });
-    socket.once("error", error => {
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", (error) => {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ECONNREFUSED" || code === "ENOENT") resolve(false);
       else reject(error);
@@ -376,15 +497,17 @@ async function acquireStartupLock(path: string): Promise<FileHandle> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     const owner = Number(await readFile(path, "utf8").catch(() => ""));
-    throw new Error(Number.isSafeInteger(owner) && owner > 1
-      ? `control socket startup lock already exists (PID ${owner})`
-      : "control socket startup lock already exists");
+    throw new Error(
+      Number.isSafeInteger(owner) && owner > 1
+        ? `control socket startup lock already exists (PID ${owner})`
+        : "control socket startup lock already exists",
+    );
   }
 }
 
 async function releaseStartupLock(lock: FileHandle, path: string): Promise<void> {
   await lock.close();
-  await unlink(path).catch(error => {
+  await unlink(path).catch((error) => {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   });
 }

@@ -13,19 +13,69 @@ interface DatabaseConnection {
 }
 
 interface DatabaseConstructor {
-  new(path: string): DatabaseConnection;
+  new (path: string): DatabaseConnection;
 }
 
-const Database = (process.versions.bun
-  ? (await import("bun:sqlite")).Database
-  : (await import("better-sqlite3")).default) as DatabaseConstructor;
+const Database = (
+  process.versions.bun ? (await import("bun:sqlite")).Database : (await import("better-sqlite3")).default
+) as DatabaseConstructor;
 
-export interface SessionRecord { id: string; csrfToken: string; createdAt: number; expiresAt: number }
-export interface HostRecord { id: string; name: string; hostname: string; port: number; username: string; hostKeySha256: string; identityFile: string; prependPath?: string; createdAt: number }
-export interface ThreadRecord { id: string; hostId: string; codexThreadId?: string; tmuxSession: string; remotePort?: number; workingDirectory: string; proxy?: string; prependPath?: string; title: string; status: string; hasRollout?: number; createdAt: number; updatedAt: number }
-export interface MessageRecord { id: string; threadId: string; role: string; text: string; streaming: number; createdAt: number }
-export interface PendingRecord { id: string; threadId: string; payload: string; rpcId: string; method: string; params: string; resolvedAt?: number; createdAt: number }
-export interface ThreadCreateDefaultsRecord { hostId: string; cwd: string; proxy?: string; prependPath?: string }
+export interface SessionRecord {
+  id: string;
+  csrfToken: string;
+  createdAt: number;
+  expiresAt: number;
+}
+export interface HostRecord {
+  id: string;
+  name: string;
+  hostname: string;
+  port: number;
+  username: string;
+  hostKeySha256: string;
+  identityFile: string;
+  prependPath?: string;
+  createdAt: number;
+}
+export interface ThreadRecord {
+  id: string;
+  hostId: string;
+  codexThreadId?: string;
+  tmuxSession: string;
+  remotePort?: number;
+  workingDirectory: string;
+  proxy?: string;
+  prependPath?: string;
+  title: string;
+  status: string;
+  hasRollout?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+export interface MessageRecord {
+  id: string;
+  threadId: string;
+  role: string;
+  text: string;
+  streaming: number;
+  createdAt: number;
+}
+export interface PendingRecord {
+  id: string;
+  threadId: string;
+  payload: string;
+  rpcId: string;
+  method: string;
+  params: string;
+  resolvedAt?: number;
+  createdAt: number;
+}
+export interface ThreadCreateDefaultsRecord {
+  hostId: string;
+  cwd: string;
+  proxy?: string;
+  prependPath?: string;
+}
 
 export class Storage {
   readonly db: DatabaseConnection;
@@ -68,57 +118,209 @@ export class Storage {
       );
     `);
     const hostColumns = this.db.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
-    if (!hostColumns.some(column => column.name === "prepend_path")) {
+    if (!hostColumns.some((column) => column.name === "prepend_path")) {
       this.db.exec("ALTER TABLE hosts ADD COLUMN prepend_path TEXT");
-      if (hostColumns.some(column => column.name === "path_env")) this.db.exec("UPDATE hosts SET prepend_path=path_env WHERE path_env IS NOT NULL");
+      if (hostColumns.some((column) => column.name === "path_env"))
+        this.db.exec("UPDATE hosts SET prepend_path=path_env WHERE path_env IS NOT NULL");
     }
     const threadColumns = this.db.prepare("PRAGMA table_info(threads)").all() as Array<{ name: string }>;
-    if (!threadColumns.some(column => column.name === "title")) this.db.exec("ALTER TABLE threads ADD COLUMN title TEXT NOT NULL DEFAULT 'Codex thread'");
-    if (!threadColumns.some(column => column.name === "remote_port")) this.db.exec("ALTER TABLE threads ADD COLUMN remote_port INTEGER");
-    if (!threadColumns.some(column => column.name === "proxy")) this.db.exec("ALTER TABLE threads ADD COLUMN proxy TEXT");
-    if (!threadColumns.some(column => column.name === "prepend_path")) this.db.exec("ALTER TABLE threads ADD COLUMN prepend_path TEXT");
-    if (!threadColumns.some(column => column.name === "has_rollout")) {
+    if (!threadColumns.some((column) => column.name === "title"))
+      this.db.exec("ALTER TABLE threads ADD COLUMN title TEXT NOT NULL DEFAULT 'Codex thread'");
+    if (!threadColumns.some((column) => column.name === "remote_port"))
+      this.db.exec("ALTER TABLE threads ADD COLUMN remote_port INTEGER");
+    if (!threadColumns.some((column) => column.name === "proxy"))
+      this.db.exec("ALTER TABLE threads ADD COLUMN proxy TEXT");
+    if (!threadColumns.some((column) => column.name === "prepend_path"))
+      this.db.exec("ALTER TABLE threads ADD COLUMN prepend_path TEXT");
+    if (!threadColumns.some((column) => column.name === "has_rollout")) {
       this.db.exec("ALTER TABLE threads ADD COLUMN has_rollout INTEGER NOT NULL DEFAULT 0");
-      this.db.exec("UPDATE threads SET has_rollout=1 WHERE title LIKE 'Resume %' OR EXISTS (SELECT 1 FROM messages WHERE messages.thread_id=threads.id)");
+      this.db.exec(
+        "UPDATE threads SET has_rollout=1 WHERE title LIKE 'Resume %' OR EXISTS (SELECT 1 FROM messages WHERE messages.thread_id=threads.id)",
+      );
     }
-    const pendingColumns=this.db.prepare("PRAGMA table_info(pending_requests)").all() as Array<{name:string}>;
-    if(!pendingColumns.some(column=>column.name==="rpc_id"))this.db.exec("ALTER TABLE pending_requests ADD COLUMN rpc_id TEXT NOT NULL DEFAULT 'null'");
-    if(!pendingColumns.some(column=>column.name==="method"))this.db.exec("ALTER TABLE pending_requests ADD COLUMN method TEXT NOT NULL DEFAULT ''");
-    if(!pendingColumns.some(column=>column.name==="params"))this.db.exec("ALTER TABLE pending_requests ADD COLUMN params TEXT NOT NULL DEFAULT '{}'");
+    const pendingColumns = this.db.prepare("PRAGMA table_info(pending_requests)").all() as Array<{ name: string }>;
+    if (!pendingColumns.some((column) => column.name === "rpc_id"))
+      this.db.exec("ALTER TABLE pending_requests ADD COLUMN rpc_id TEXT NOT NULL DEFAULT 'null'");
+    if (!pendingColumns.some((column) => column.name === "method"))
+      this.db.exec("ALTER TABLE pending_requests ADD COLUMN method TEXT NOT NULL DEFAULT ''");
+    if (!pendingColumns.some((column) => column.name === "params"))
+      this.db.exec("ALTER TABLE pending_requests ADD COLUMN params TEXT NOT NULL DEFAULT '{}'");
   }
   createSession(session: SessionRecord): void {
-    this.db.prepare("INSERT INTO login_sessions(id, csrf_token, created_at, expires_at) VALUES (?, ?, ?, ?)")
+    this.db
+      .prepare("INSERT INTO login_sessions(id, csrf_token, created_at, expires_at) VALUES (?, ?, ?, ?)")
       .run(session.id, session.csrfToken, session.createdAt, session.expiresAt);
   }
   session(id: string, now = Date.now()): SessionRecord | undefined {
-    return this.db.prepare("SELECT id, csrf_token AS csrfToken, created_at AS createdAt, expires_at AS expiresAt FROM login_sessions WHERE id = ? AND expires_at > ?")
+    return this.db
+      .prepare(
+        "SELECT id, csrf_token AS csrfToken, created_at AS createdAt, expires_at AS expiresAt FROM login_sessions WHERE id = ? AND expires_at > ?",
+      )
       .get(id, now) as SessionRecord | undefined;
   }
-  deleteSession(id: string): void { this.db.prepare("DELETE FROM login_sessions WHERE id = ?").run(id); }
-  deleteAllSessions(): void { this.db.prepare("DELETE FROM login_sessions").run(); }
-  pruneSessions(now = Date.now()): void { this.db.prepare("DELETE FROM login_sessions WHERE expires_at <= ?").run(now); }
-  hosts(): HostRecord[] { return this.db.prepare("SELECT id,name,hostname,port,username,host_key_sha256 AS hostKeySha256,identity_file AS identityFile,prepend_path AS prependPath,created_at AS createdAt FROM hosts ORDER BY name").all() as HostRecord[]; }
-  host(id: string): HostRecord | undefined { return this.db.prepare("SELECT id,name,hostname,port,username,host_key_sha256 AS hostKeySha256,identity_file AS identityFile,prepend_path AS prependPath,created_at AS createdAt FROM hosts WHERE id=?").get(id) as HostRecord | undefined; }
-  upsertHost(host: HostRecord): void { this.db.prepare("INSERT INTO hosts(id,name,hostname,port,username,host_key_sha256,identity_file,prepend_path,created_at) VALUES(@id,@name,@hostname,@port,@username,@hostKeySha256,@identityFile,@prependPath,@createdAt) ON CONFLICT(id) DO UPDATE SET name=excluded.name,hostname=excluded.hostname,port=excluded.port,username=excluded.username,host_key_sha256=excluded.host_key_sha256,identity_file=excluded.identity_file,prepend_path=excluded.prepend_path").run({ ...host, prependPath: host.prependPath ?? null }); }
+  deleteSession(id: string): void {
+    this.db.prepare("DELETE FROM login_sessions WHERE id = ?").run(id);
+  }
+  deleteAllSessions(): void {
+    this.db.prepare("DELETE FROM login_sessions").run();
+  }
+  pruneSessions(now = Date.now()): void {
+    this.db.prepare("DELETE FROM login_sessions WHERE expires_at <= ?").run(now);
+  }
+  hosts(): HostRecord[] {
+    return this.db
+      .prepare(
+        "SELECT id,name,hostname,port,username,host_key_sha256 AS hostKeySha256,identity_file AS identityFile,prepend_path AS prependPath,created_at AS createdAt FROM hosts ORDER BY name",
+      )
+      .all() as HostRecord[];
+  }
+  host(id: string): HostRecord | undefined {
+    return this.db
+      .prepare(
+        "SELECT id,name,hostname,port,username,host_key_sha256 AS hostKeySha256,identity_file AS identityFile,prepend_path AS prependPath,created_at AS createdAt FROM hosts WHERE id=?",
+      )
+      .get(id) as HostRecord | undefined;
+  }
+  upsertHost(host: HostRecord): void {
+    this.db
+      .prepare(
+        "INSERT INTO hosts(id,name,hostname,port,username,host_key_sha256,identity_file,prepend_path,created_at) VALUES(@id,@name,@hostname,@port,@username,@hostKeySha256,@identityFile,@prependPath,@createdAt) ON CONFLICT(id) DO UPDATE SET name=excluded.name,hostname=excluded.hostname,port=excluded.port,username=excluded.username,host_key_sha256=excluded.host_key_sha256,identity_file=excluded.identity_file,prepend_path=excluded.prepend_path",
+      )
+      .run({ ...host, prependPath: host.prependPath ?? null });
+  }
   deleteHost(id: string): boolean {
-    const deleted=this.db.prepare("DELETE FROM hosts WHERE id=?").run(id).changes===1;
-    if(deleted)this.db.prepare("DELETE FROM thread_create_defaults WHERE host_id=?").run(id);
+    const deleted = this.db.prepare("DELETE FROM hosts WHERE id=?").run(id).changes === 1;
+    if (deleted) this.db.prepare("DELETE FROM thread_create_defaults WHERE host_id=?").run(id);
     return deleted;
   }
-  threads(): ThreadRecord[] { return this.db.prepare("SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,status,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads ORDER BY updated_at DESC").all() as ThreadRecord[]; }
-  thread(id: string): ThreadRecord | undefined { return this.db.prepare("SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,status,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads WHERE id=?").get(id) as ThreadRecord | undefined; }
-  createThread(thread: ThreadRecord): void { this.db.prepare("INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,prepend_path,title,status,has_rollout,created_at,updated_at) VALUES(@id,@hostId,@codexThreadId,@tmuxSession,@remotePort,@workingDirectory,@proxy,@prependPath,@title,@status,@hasRollout,@createdAt,@updatedAt)").run({ ...thread, codexThreadId: thread.codexThreadId ?? null, remotePort: thread.remotePort ?? null, proxy: thread.proxy ?? null, prependPath: thread.prependPath ?? null, hasRollout: thread.hasRollout ?? 0 }); }
-  updateThread(id: string, update: { codexThreadId?: string; remotePort?: number; status?: string; hasRollout?: number; updatedAt: number }): void { this.db.prepare("UPDATE threads SET codex_thread_id=COALESCE(@codexThreadId,codex_thread_id),remote_port=COALESCE(@remotePort,remote_port),status=COALESCE(@status,status),has_rollout=COALESCE(@hasRollout,has_rollout),updated_at=@updatedAt WHERE id=@id").run({ id, codexThreadId: update.codexThreadId ?? null, remotePort:update.remotePort??null,status: update.status ?? null, hasRollout: update.hasRollout ?? null, updatedAt: update.updatedAt }); }
-  deleteThread(id: string): boolean { return this.db.prepare("DELETE FROM threads WHERE id=?").run(id).changes === 1; }
-  messages(threadId: string): MessageRecord[] { return this.db.prepare("SELECT id,thread_id AS threadId,role,text,streaming,created_at AS createdAt FROM messages WHERE thread_id=? ORDER BY created_at,id").all(threadId) as MessageRecord[]; }
-  putMessage(message: MessageRecord): void { this.db.prepare("INSERT INTO messages(id,thread_id,role,text,streaming,created_at) VALUES(@id,@threadId,@role,@text,@streaming,@createdAt) ON CONFLICT(id) DO UPDATE SET text=excluded.text,streaming=excluded.streaming").run(message); }
-  appendMessage(id: string, text: string, streaming: boolean): void { this.db.prepare("UPDATE messages SET text=text||?,streaming=? WHERE id=?").run(text,streaming?1:0,id); }
-  pending(threadId: string): PendingRecord[] { return this.db.prepare("SELECT id,thread_id AS threadId,payload,rpc_id AS rpcId,method,params,resolved_at AS resolvedAt,created_at AS createdAt FROM pending_requests WHERE thread_id=? AND resolved_at IS NULL ORDER BY created_at").all(threadId) as PendingRecord[]; }
-  pendingById(id:string,threadId:string):PendingRecord|undefined{return this.db.prepare("SELECT id,thread_id AS threadId,payload,rpc_id AS rpcId,method,params,resolved_at AS resolvedAt,created_at AS createdAt FROM pending_requests WHERE id=? AND thread_id=? AND resolved_at IS NULL").get(id,threadId) as PendingRecord|undefined;}
-  putPending(request: PendingRecord): void { this.db.prepare("INSERT INTO pending_requests(id,thread_id,payload,rpc_id,method,params,resolved_at,created_at) VALUES(@id,@threadId,@payload,@rpcId,@method,@params,@resolvedAt,@createdAt)").run({ ...request, resolvedAt: request.resolvedAt ?? null }); }
-  resolvePending(id: string, threadId: string, now = Date.now()): boolean { return this.db.prepare("UPDATE pending_requests SET resolved_at=? WHERE id=? AND thread_id=? AND resolved_at IS NULL").run(now,id,threadId).changes === 1; }
-  resolveAllPending(threadId:string,now=Date.now()):string[]{const ids=(this.db.prepare("SELECT id FROM pending_requests WHERE thread_id=? AND resolved_at IS NULL").all(threadId) as Array<{id:string}>).map(row=>row.id);if(ids.length)this.db.prepare("UPDATE pending_requests SET resolved_at=? WHERE thread_id=? AND resolved_at IS NULL").run(now,threadId);return ids;}
-  threadCreateDefaults():ThreadCreateDefaultsRecord|undefined{const value=this.db.prepare("SELECT host_id AS hostId,cwd,proxy,prepend_path AS prependPath FROM thread_create_defaults WHERE singleton=1").get() as {hostId:string;cwd:string;proxy:string|null;prependPath:string|null}|undefined;return value?{hostId:value.hostId,cwd:value.cwd,...(value.proxy?{proxy:value.proxy}:{}),...(value.prependPath?{prependPath:value.prependPath}:{})}:undefined;}
-  saveThreadCreateDefaults(value:ThreadCreateDefaultsRecord):void{this.db.prepare("INSERT INTO thread_create_defaults(singleton,host_id,cwd,proxy,prepend_path) VALUES(1,@hostId,@cwd,@proxy,@prependPath) ON CONFLICT(singleton) DO UPDATE SET host_id=excluded.host_id,cwd=excluded.cwd,proxy=excluded.proxy,prepend_path=excluded.prepend_path").run({...value,proxy:value.proxy??null,prependPath:value.prependPath??null});}
-  close(): void { this.db.close(); }
+  threads(): ThreadRecord[] {
+    return this.db
+      .prepare(
+        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,status,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads ORDER BY updated_at DESC",
+      )
+      .all() as ThreadRecord[];
+  }
+  thread(id: string): ThreadRecord | undefined {
+    return this.db
+      .prepare(
+        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,status,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads WHERE id=?",
+      )
+      .get(id) as ThreadRecord | undefined;
+  }
+  createThread(thread: ThreadRecord): void {
+    this.db
+      .prepare(
+        "INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,prepend_path,title,status,has_rollout,created_at,updated_at) VALUES(@id,@hostId,@codexThreadId,@tmuxSession,@remotePort,@workingDirectory,@proxy,@prependPath,@title,@status,@hasRollout,@createdAt,@updatedAt)",
+      )
+      .run({
+        ...thread,
+        codexThreadId: thread.codexThreadId ?? null,
+        remotePort: thread.remotePort ?? null,
+        proxy: thread.proxy ?? null,
+        prependPath: thread.prependPath ?? null,
+        hasRollout: thread.hasRollout ?? 0,
+      });
+  }
+  updateThread(
+    id: string,
+    update: { codexThreadId?: string; remotePort?: number; status?: string; hasRollout?: number; updatedAt: number },
+  ): void {
+    this.db
+      .prepare(
+        "UPDATE threads SET codex_thread_id=COALESCE(@codexThreadId,codex_thread_id),remote_port=COALESCE(@remotePort,remote_port),status=COALESCE(@status,status),has_rollout=COALESCE(@hasRollout,has_rollout),updated_at=@updatedAt WHERE id=@id",
+      )
+      .run({
+        id,
+        codexThreadId: update.codexThreadId ?? null,
+        remotePort: update.remotePort ?? null,
+        status: update.status ?? null,
+        hasRollout: update.hasRollout ?? null,
+        updatedAt: update.updatedAt,
+      });
+  }
+  deleteThread(id: string): boolean {
+    return this.db.prepare("DELETE FROM threads WHERE id=?").run(id).changes === 1;
+  }
+  messages(threadId: string): MessageRecord[] {
+    return this.db
+      .prepare(
+        "SELECT id,thread_id AS threadId,role,text,streaming,created_at AS createdAt FROM messages WHERE thread_id=? ORDER BY created_at,id",
+      )
+      .all(threadId) as MessageRecord[];
+  }
+  putMessage(message: MessageRecord): void {
+    this.db
+      .prepare(
+        "INSERT INTO messages(id,thread_id,role,text,streaming,created_at) VALUES(@id,@threadId,@role,@text,@streaming,@createdAt) ON CONFLICT(id) DO UPDATE SET text=excluded.text,streaming=excluded.streaming",
+      )
+      .run(message);
+  }
+  appendMessage(id: string, text: string, streaming: boolean): void {
+    this.db.prepare("UPDATE messages SET text=text||?,streaming=? WHERE id=?").run(text, streaming ? 1 : 0, id);
+  }
+  pending(threadId: string): PendingRecord[] {
+    return this.db
+      .prepare(
+        "SELECT id,thread_id AS threadId,payload,rpc_id AS rpcId,method,params,resolved_at AS resolvedAt,created_at AS createdAt FROM pending_requests WHERE thread_id=? AND resolved_at IS NULL ORDER BY created_at",
+      )
+      .all(threadId) as PendingRecord[];
+  }
+  pendingById(id: string, threadId: string): PendingRecord | undefined {
+    return this.db
+      .prepare(
+        "SELECT id,thread_id AS threadId,payload,rpc_id AS rpcId,method,params,resolved_at AS resolvedAt,created_at AS createdAt FROM pending_requests WHERE id=? AND thread_id=? AND resolved_at IS NULL",
+      )
+      .get(id, threadId) as PendingRecord | undefined;
+  }
+  putPending(request: PendingRecord): void {
+    this.db
+      .prepare(
+        "INSERT INTO pending_requests(id,thread_id,payload,rpc_id,method,params,resolved_at,created_at) VALUES(@id,@threadId,@payload,@rpcId,@method,@params,@resolvedAt,@createdAt)",
+      )
+      .run({ ...request, resolvedAt: request.resolvedAt ?? null });
+  }
+  resolvePending(id: string, threadId: string, now = Date.now()): boolean {
+    return (
+      this.db
+        .prepare("UPDATE pending_requests SET resolved_at=? WHERE id=? AND thread_id=? AND resolved_at IS NULL")
+        .run(now, id, threadId).changes === 1
+    );
+  }
+  resolveAllPending(threadId: string, now = Date.now()): string[] {
+    const ids = (
+      this.db
+        .prepare("SELECT id FROM pending_requests WHERE thread_id=? AND resolved_at IS NULL")
+        .all(threadId) as Array<{ id: string }>
+    ).map((row) => row.id);
+    if (ids.length)
+      this.db
+        .prepare("UPDATE pending_requests SET resolved_at=? WHERE thread_id=? AND resolved_at IS NULL")
+        .run(now, threadId);
+    return ids;
+  }
+  threadCreateDefaults(): ThreadCreateDefaultsRecord | undefined {
+    const value = this.db
+      .prepare(
+        "SELECT host_id AS hostId,cwd,proxy,prepend_path AS prependPath FROM thread_create_defaults WHERE singleton=1",
+      )
+      .get() as { hostId: string; cwd: string; proxy: string | null; prependPath: string | null } | undefined;
+    return value
+      ? {
+          hostId: value.hostId,
+          cwd: value.cwd,
+          ...(value.proxy ? { proxy: value.proxy } : {}),
+          ...(value.prependPath ? { prependPath: value.prependPath } : {}),
+        }
+      : undefined;
+  }
+  saveThreadCreateDefaults(value: ThreadCreateDefaultsRecord): void {
+    this.db
+      .prepare(
+        "INSERT INTO thread_create_defaults(singleton,host_id,cwd,proxy,prepend_path) VALUES(1,@hostId,@cwd,@proxy,@prependPath) ON CONFLICT(singleton) DO UPDATE SET host_id=excluded.host_id,cwd=excluded.cwd,proxy=excluded.proxy,prepend_path=excluded.prepend_path",
+      )
+      .run({ ...value, proxy: value.proxy ?? null, prependPath: value.prependPath ?? null });
+  }
+  close(): void {
+    this.db.close();
+  }
 }

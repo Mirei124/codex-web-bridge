@@ -7,10 +7,13 @@ const schema = z.object({
   version: z.literal(1),
   bindHost: z.enum(["127.0.0.1", "0.0.0.0"]).default("127.0.0.1"),
   port: z.number().int().min(1).max(65535).default(3210),
-  publicOrigin: z.string().url().refine(
-    (value) => value.startsWith("http://") || value.startsWith("https://"),
-    "publicOrigin must use HTTP or HTTPS",
-  ),
+  publicOrigin: z
+    .string()
+    .url()
+    .refine(
+      (value) => value.startsWith("http://") || value.startsWith("https://"),
+      "publicOrigin must use HTTP or HTTPS",
+    ),
   passwordHash: z.string().min(1),
   sessionSecret: z.string().min(32),
   trustedProxy: z.literal("127.0.0.1").default("127.0.0.1"),
@@ -50,7 +53,9 @@ export async function saveConfig(config: AppConfig, env: NodeJS.ProcessEnv = pro
   await rename(temp, target);
 }
 
-export function parseConfig(value: unknown): AppConfig { return normalizeLegacyOrigin(schema.parse(value)); }
+export function parseConfig(value: unknown): AppConfig {
+  return normalizeLegacyOrigin(schema.parse(value));
+}
 
 function normalizeLegacyOrigin(config: AppConfig): AppConfig {
   if (config.publicOrigin !== "https://localhost") return config;
