@@ -15,13 +15,12 @@ import { Terminal } from "./Terminal";
 import { useThreadEvents } from "./useThreadEvents";
 
 const baseTitle = "Codex Bridge";
-function loopbackNotificationContext(): boolean {
-  const host = location.hostname.toLowerCase();
-  return window.isSecureContext && (host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host));
+function notificationContextAvailable(): boolean {
+  return window.isSecureContext;
 }
 function notificationProblem(): string | undefined {
   if (!("Notification" in window)) return "当前浏览器不支持系统通知，将使用未读高亮和标签提醒。";
-  if (!loopbackNotificationContext()) return "系统通知仅在本机回环地址可用，将使用未读高亮和标签提醒。";
+  if (!notificationContextAvailable()) return "系统通知仅在安全上下文（HTTPS 或本机回环地址）可用，将使用未读高亮和标签提醒。";
   if (Notification.permission === "denied") return "系统通知权限已被禁用，请在浏览器站点设置中重新允许。";
   if (Notification.permission === "default") return "允许系统通知后，Codex 回答完成时可以在后台提醒你。";
 }
@@ -726,7 +725,7 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", readVisibleThread);
   }, []);
   async function enableNotifications() {
-    if (!("Notification" in window) || !loopbackNotificationContext()) return;
+    if (!("Notification" in window) || !notificationContextAvailable()) return;
     const permission = await Notification.requestPermission();
     setToast(permission === "granted" ? undefined : notificationProblem());
   }
@@ -745,7 +744,7 @@ export default function App() {
     const message = document.createElement("span");
     message.textContent = toast;
     element.append(message);
-    if ("Notification" in window && loopbackNotificationContext() && Notification.permission === "default") {
+    if ("Notification" in window && notificationContextAvailable() && Notification.permission === "default") {
       const enable = document.createElement("button");
       enable.textContent = "启用通知";
       enable.onclick = () => void enableNotifications();
@@ -779,7 +778,7 @@ export default function App() {
         document.visibilityState === "visible";
       if (completed && !currentlyReading) {
         setUnread((old) => new Set(old).add(event.thread.id));
-        if ("Notification" in window && loopbackNotificationContext() && Notification.permission === "granted") {
+        if ("Notification" in window && notificationContextAvailable() && Notification.permission === "granted") {
           const notice = new Notification(event.thread.status === "error" ? "Codex 会话执行失败" : "Codex 已完成回答", {
             body: event.thread.title,
             tag: `cwb-${event.thread.id}`,

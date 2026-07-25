@@ -652,7 +652,7 @@ describe("dashboard security and operations", () => {
     expect(screen.getByText("/repo · idle")).toBeInTheDocument();
   });
 
-  it("highlights an unread background thread and sends a loopback notification when it completes", async () => {
+  it("highlights an unread background thread and sends a notification from an HTTPS origin when it completes", async () => {
     class NotificationStub {
       static permission: NotificationPermission = "granted";
       static instances: NotificationStub[] = [];
@@ -670,7 +670,11 @@ describe("dashboard security and operations", () => {
     }
     vi.stubGlobal("Notification", NotificationStub);
     vi.stubGlobal("isSecureContext", true);
-    vi.stubGlobal("location", { protocol: "http:", hostname: "localhost", host: "localhost:3210" });
+    vi.stubGlobal("location", {
+      protocol: "https:",
+      hostname: "192.0.2.10",
+      host: "192.0.2.10:8443",
+    });
     const baseFetch = authenticatedFetch();
     const other = {
       id: "other",

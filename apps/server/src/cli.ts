@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { open, readFile, unlink, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
-import { loadConfig, paths, saveConfig, type AppConfig } from "@cwb/config";
+import { loadConfig, parseConfig, paths, saveConfig, type AppConfig } from "@cwb/config";
 import { hashPassword } from "./auth.js";
 import { helpText, parseBusinessCommand, UsageError, type ParsedCommand } from "./cli-command.js";
 import { controlRequest, ControlRequestError, type ControlError } from "./control-client.js";
@@ -137,6 +137,20 @@ async function clearStaleControlLock(): Promise<void> {
   await unlink(lockPath);
 }
 
+function parsePortOption(value: string | undefined, fallback: number): number {
+  const portText = value ?? String(fallback);
+  if (!/^\d+$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535)
+    throw new UsageError("--port must be an integer from 1 to 65535");
+  return Number(portText);
+}
+
+function updateDefaultLoopbackOrigin(origin: string, oldPort: number, newPort: number): string {
+  if (oldPort === newPort) return origin;
+  if (origin === `http://127.0.0.1:${oldPort}`) return `http://127.0.0.1:${newPort}`;
+  if (origin === `http://localhost:${oldPort}`) return `http://localhost:${newPort}`;
+  return origin;
+}
+
 async function configure(args: string[]): Promise<{
   generatedPassword?: string;
   createdConfig?: AppConfig;
@@ -144,26 +158,35 @@ async function configure(args: string[]): Promise<{
 }> {
   try {
     const config = await loadConfig();
-    if (!args.includes("--reset-password")) return {};
     if (option(args, "--password") !== undefined)
-      throw new UsageError("--password and --reset-password are mutually exclusive");
-    const generatedPassword = randomBytes(24).toString("base64url");
-    const current = { ...config, passwordHash: await hashPassword(generatedPassword) };
-    await saveConfig(current);
-    return { generatedPassword, replacedConfig: { previous: config, current } };
+      throw new UsageError("configuration already exists; use 'codex-web-bridge password set NEW_PASSWORD'");
+    const port = parsePortOption(option(args, "--port"), config.port);
+    const publicOrigin =
+      option(args, "--origin") ??
+      updateDefaultLoopbackOrigin(config.publicOrigin, config.port, port);
+    const generatedPassword = args.includes("--reset-password") ? randomBytes(24).toString("base64url") : undefined;
+    const next = parseConfig({
+      ...config,
+      port,
+      publicOrigin,
+      ...(args.includes("--accept-risk") ? { bindHost: "0.0.0.0" } : {}),
+      ...(generatedPassword ? { passwordHash: await hashPassword(generatedPassword) } : {}),
+    });
+    if (JSON.stringify(next) === JSON.stringify(config)) return {};
+    await saveConfig(next);
+    return generatedPassword
+      ? { generatedPassword, replacedConfig: { previous: config, current: next } }
+      : { replacedConfig: { previous: config, current: next } };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  const portText = option(args, "--port") ?? "3210";
-  if (!/^\d+$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535)
-    throw new UsageError("--port must be an integer from 1 to 65535");
-  const port = Number(portText);
+  const port = parsePortOption(option(args, "--port"), 3210);
   const suppliedPassword = option(args, "--password") ?? process.env.CWB_PASSWORD;
   const generatedPassword = suppliedPassword ? undefined : randomBytes(24).toString("base64url");
   const password = validateDashboardPassword(suppliedPassword ?? generatedPassword!);
   const publicOrigin = option(args, "--origin") ?? process.env.CWB_PUBLIC_ORIGIN ?? `http://127.0.0.1:${port}`;
   const acceptRisk = args.includes("--accept-risk");
-  const createdConfig: AppConfig = {
+  const createdConfig = parseConfig({
     version: 1,
     bindHost: acceptRisk ? "0.0.0.0" : "127.0.0.1",
     port,
@@ -171,7 +194,7 @@ async function configure(args: string[]): Promise<{
     passwordHash: await hashPassword(password),
     sessionSecret: randomBytes(32).toString("base64url"),
     trustedProxy: "127.0.0.1",
-  };
+  });
   await saveConfig(createdConfig);
   return { generatedPassword, createdConfig };
 }

@@ -34,6 +34,18 @@ async function freePort(): Promise<number> {
   });
 }
 
+async function waitForHttpReady(url: string, headers: Record<string, string>): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    try {
+      await fetch(url, { headers: { ...headers, connection: "close" } });
+      return;
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`server did not become ready: ${url}`);
+}
+
 afterEach(async () => {
   if (!dataDir) return;
   run(["stop"], { ...process.env, CWB_DATA_DIR: dataDir });
@@ -94,6 +106,7 @@ describe("built CLI and daemon", () => {
     const resetOutput = output(run(["password", "reset"], env));
     expect(resetOutput.data.generatedPassword).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(resetOutput.data.daemonRestarted).toBe(true);
+    await waitForHttpReady(`http://127.0.0.1:${port}/api/auth/session`, headers);
     const resetLogin = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
       method: "POST",
       headers: { ...headers, connection: "close", "content-type": "application/json" },
@@ -106,6 +119,7 @@ describe("built CLI and daemon", () => {
     expect(setOutput.data).toEqual({ daemonRestarted: true });
     const afterSetPid = (JSON.parse(await readFile(join(dataDir, "daemon.pid"), "utf8")) as { pid: number }).pid;
     expect(afterSetPid).not.toBe(beforeSetPid);
+    await waitForHttpReady(`http://127.0.0.1:${port}/api/auth/session`, headers);
     const setLogin = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
       method: "POST",
       headers: { ...headers, connection: "close", "content-type": "application/json" },
@@ -142,6 +156,70 @@ describe("built CLI and daemon", () => {
     const startedWithNewPassword = output(run(["start", "--reset-password"], env));
     expect(startedWithNewPassword.data.generatedPassword).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(output(run(["stop"], env))).toMatchObject({ data: { state: "stopped" } });
+  }, 20_000);
+
+  it("applies updated start options to an existing config", async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "cwb-cli-test-"));
+    const initialPort = await freePort();
+    const updatedPort = await freePort();
+    const updatedOrigin = "https://192.0.2.10:8443";
+    const env = { ...process.env, CWB_DATA_DIR: dataDir };
+
+    const started = output(run(["start", "--port", String(initialPort)], env));
+    const password = String(started.data.generatedPassword);
+    expect(output(run(["stop"], env))).toMatchObject({ data: { state: "stopped" } });
+
+    expect(output(run(["start", "--port", String(updatedPort), "--origin", updatedOrigin], env))).toMatchObject({
+      data: { state: "running" },
+    });
+    expect(output(run(["dashboard"], env))).toMatchObject({ data: { url: updatedOrigin } });
+    expect(JSON.parse(await readFile(join(dataDir, "config.json"), "utf8"))).toMatchObject({
+      port: updatedPort,
+      publicOrigin: updatedOrigin,
+    });
+
+    const accepted = await fetch(`http://127.0.0.1:${updatedPort}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        origin: updatedOrigin,
+        "x-forwarded-proto": "https",
+        connection: "close",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ password }),
+    });
+    expect(accepted.status).toBe(200);
+
+    const rejected = await fetch(`http://127.0.0.1:${updatedPort}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        origin: "https://evil.example",
+        "x-forwarded-proto": "https",
+        connection: "close",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ password }),
+    });
+    expect(rejected.status).toBe(403);
+  }, 20_000);
+
+  it("updates the default loopback dashboard origin when only the port changes", async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "cwb-cli-test-"));
+    const initialPort = await freePort();
+    const updatedPort = await freePort();
+    const env = { ...process.env, CWB_DATA_DIR: dataDir };
+
+    output(run(["start", "--port", String(initialPort)], env));
+    expect(output(run(["stop"], env))).toMatchObject({ data: { state: "stopped" } });
+
+    expect(output(run(["start", "--port", String(updatedPort)], env))).toMatchObject({
+      data: { state: "running" },
+    });
+    expect(output(run(["dashboard"], env))).toMatchObject({ data: { url: `http://127.0.0.1:${updatedPort}` } });
+    expect(JSON.parse(await readFile(join(dataDir, "config.json"), "utf8"))).toMatchObject({
+      port: updatedPort,
+      publicOrigin: `http://127.0.0.1:${updatedPort}`,
+    });
   }, 20_000);
 
   it("reports an unavailable daemon as structured JSON", async () => {
