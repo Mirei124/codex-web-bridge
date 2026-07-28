@@ -205,6 +205,7 @@ it("updates public settings without exposing internal secrets", async () => {
 class FakeRuntime implements RuntimeManager {
   events = new EventEmitter();
   calls: string[] = [];
+  resolutions: Array<{ requestId: string | number; value: unknown }> = [];
   failExit = false;
   async create() {
     this.calls.push("create");
@@ -230,8 +231,9 @@ class FakeRuntime implements RuntimeManager {
   async interrupt() {
     this.calls.push("interrupt");
   }
-  async resolve() {
+  async resolve(_thread: unknown, requestId: string | number, value: unknown) {
     this.calls.push("resolve");
+    this.resolutions.push({ requestId, value });
   }
   async prepareTerminal() {
     this.calls.push("prepareTerminal");
@@ -590,4 +592,99 @@ it("expires pending RPC callbacks when the runtime connection generation changes
   });
   expect(stale.statusCode).toBe(409);
   expect(runtime.calls).not.toContain("resolve");
+});
+
+it("maps session-scoped approval responses to Codex RPC results", async () => {
+  storage = new Storage(":memory:");
+  storage.upsertHost({
+    id: "host",
+    name: "A",
+    hostname: "a",
+    port: 22,
+    username: "u",
+    hostKeySha256: "key",
+    identityFile: "/key",
+    createdAt: 1,
+  });
+  storage.createThread({
+    id: "thread",
+    hostId: "host",
+    codexThreadId: "codex",
+    tmuxSession: "cwb-thread",
+    remotePort: 45678,
+    workingDirectory: "/work",
+    title: "thread",
+    status: "waiting",
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  storage.putPending({
+    id: "permissions",
+    threadId: "thread",
+    payload: "{}",
+    rpcId: '"rpc-permissions"',
+    method: "item/permissions/requestApproval",
+    params: JSON.stringify({ permissions: { "run:pnpm test": true } }),
+    createdAt: 1,
+  });
+  storage.putPending({
+    id: "command",
+    threadId: "thread",
+    payload: "{}",
+    rpcId: '"rpc-command"',
+    method: "item/commandExecution/requestApproval",
+    params: "{}",
+    createdAt: 2,
+  });
+  const runtime = new FakeRuntime();
+  app = await buildServer(
+    {
+      version: 1,
+      bindHost: "127.0.0.1",
+      port: 3210,
+      publicOrigin: "https://bridge.example",
+      passwordHash: await hashPassword("correct horse battery staple"),
+      sessionSecret: "x".repeat(32),
+      trustedProxy: "127.0.0.1",
+    },
+    storage,
+    { runtime, webRoot: false },
+  );
+  const base = { "x-forwarded-proto": "https", origin: "https://bridge.example" },
+    login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      headers: base,
+      payload: { password: "correct horse battery staple" },
+    }),
+    cookie = `${login.cookies[0]!.name}=${login.cookies[0]!.value}`,
+    csrf = login.json().csrfToken,
+    headers = { ...base, cookie, "x-csrf-token": csrf };
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/api/threads/thread/requests/permissions",
+        headers,
+        payload: { approved: true, scope: "session" },
+      })
+    ).statusCode,
+  ).toBe(204);
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/api/threads/thread/requests/command",
+        headers,
+        payload: { approved: true, scope: "session" },
+      })
+    ).statusCode,
+  ).toBe(204);
+  expect(runtime.resolutions).toEqual([
+    {
+      requestId: "rpc-permissions",
+      value: { permissions: { "run:pnpm test": true }, scope: "session" },
+    },
+    { requestId: "rpc-command", value: { decision: "acceptForSession" } },
+  ]);
 });

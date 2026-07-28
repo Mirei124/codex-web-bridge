@@ -390,6 +390,8 @@ describe("dashboard security and operations", () => {
     });
     await screen.findByRole("button", { name: "中断" });
     fireEvent.click(screen.getByRole("button", { name: "中断" }));
+    expect(fetch.mock.calls.some((call) => call[0] === "/api/threads/t/interrupt")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "再次点击中断" }));
     fireEvent.click(screen.getByRole("button", { name: "退出会话" }));
     await waitFor(() => {
       const paths = fetch.mock.calls.map((call) => [call[0], (call[1] as RequestInit | undefined)?.method]);
@@ -410,6 +412,19 @@ describe("dashboard security and operations", () => {
     );
     expect(screen.getByRole("button", { name: "退出会话" })).toBeEnabled();
     expect(screen.getByText("Ready")).toBeInTheDocument();
+  });
+
+  it("sends session scope for allow all approvals", async () => {
+    const fetch = await openThread();
+    fireEvent.click(screen.getByRole("button", { name: "全部允许" }));
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/threads/t/requests/approve-1",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    const call = fetch.mock.calls.find((item) => item[0] === "/api/threads/t/requests/approve-1")![1] as RequestInit;
+    expect(JSON.parse(String(call.body))).toEqual({ approved: true, scope: "session" });
   });
 
   it("shows an exit failure and keeps the selected thread active", async () => {
@@ -634,10 +649,52 @@ describe("dashboard security and operations", () => {
     await waitFor(() => expect(screen.queryByText("生成中")).not.toBeInTheDocument());
   });
 
-  it("uses running and idle thread updates to control the interrupt action", async () => {
+  it("scrolls to the last user message when opening a thread", async () => {
+    const original = HTMLElement.prototype.scrollIntoView,
+      scrolled: string[] = [];
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value(this: HTMLElement) {
+        scrolled.push(this.textContent ?? "");
+      },
+    });
+    try {
+      const defaultFetch = authenticatedFetch(),
+        fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const path = typeof input === "string" ? input : input.toString();
+          if (path === "/api/threads/t")
+            return response({
+              ...thread,
+              messages: [
+                { id: "ready", role: "assistant", text: "Ready", createdAt: "2026-01-01" },
+                { id: "u-1", role: "user", text: "First request", createdAt: "2026-01-01" },
+                { id: "a-1", role: "assistant", text: "First answer", createdAt: "2026-01-01" },
+                { id: "u-2", role: "user", text: "Latest request", createdAt: "2026-01-02" },
+                { id: "a-2", role: "assistant", text: "Latest answer", createdAt: "2026-01-02" },
+              ],
+            });
+          return defaultFetch(input, init);
+        });
+      await openThread(fetch);
+      await waitFor(() => expect(scrolled.at(-1)).toContain("Latest request"));
+    } finally {
+      if (original) HTMLElement.prototype.scrollIntoView = original;
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+    }
+  });
+
+  it("uses generation state to control the interrupt action", async () => {
     await openThread();
     const socket = WebSocketStub.instances.at(-1)!;
     expect(screen.queryByRole("button", { name: "中断" })).not.toBeInTheDocument();
+    socket.emit({
+      type: "message.created",
+      threadId: "t",
+      message: { id: "assistant-2", role: "assistant", text: "", streaming: true, createdAt: "2026-01-01" },
+    });
+    expect(await screen.findByRole("button", { name: "中断" })).toBeInTheDocument();
+    socket.emit({ type: "message.completed", threadId: "t", messageId: "assistant-2" });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "中断" })).not.toBeInTheDocument());
     socket.emit({
       type: "thread.updated",
       thread: { id: "t", hostId: "a", title: "Bridge", cwd: "/repo", status: "running", updatedAt: "2026-01-02" },

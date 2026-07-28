@@ -148,6 +148,7 @@ export interface SendMessageRequest {
 export interface ResolveRequest {
   value?: string;
   approved?: boolean;
+  scope?: "turn" | "session";
   answers?: Record<string, { answers: string[] }>;
 }
 

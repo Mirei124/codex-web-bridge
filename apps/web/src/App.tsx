@@ -20,7 +20,8 @@ function notificationContextAvailable(): boolean {
 }
 function notificationProblem(): string | undefined {
   if (!("Notification" in window)) return "当前浏览器不支持系统通知，将使用未读高亮和标签提醒。";
-  if (!notificationContextAvailable()) return "系统通知仅在安全上下文（HTTPS 或本机回环地址）可用，将使用未读高亮和标签提醒。";
+  if (!notificationContextAvailable())
+    return "系统通知仅在安全上下文（HTTPS 或本机回环地址）可用，将使用未读高亮和标签提醒。";
   if (Notification.permission === "denied") return "系统通知权限已被禁用，请在浏览器站点设置中重新允许。";
   if (Notification.permission === "default") return "允许系统通知后，Codex 回答完成时可以在后台提醒你。";
 }
@@ -112,6 +113,9 @@ function RequestCard({ request, onResolve }: { request: PendingRequest; onResolv
           {request.command && <pre>{request.command}</pre>}
           <div className="actions">
             <button onClick={() => onResolve({ approved: true })}>允许</button>
+            <button className="secondary" onClick={() => onResolve({ approved: true, scope: "session" })}>
+              全部允许
+            </button>
             <button className="danger" onClick={() => onResolve({ approved: false })}>
               拒绝
             </button>
@@ -671,9 +675,11 @@ export default function App() {
   const [view, setView] = useState<"threads" | "settings">("threads");
   const [unread, setUnread] = useState<Set<string>>(() => new Set());
   const [toast, setToast] = useState<string>();
+  const [interruptArmedThreadId, setInterruptArmedThreadId] = useState<string>();
   const selectedId = useRef<string | undefined>(undefined);
   const viewRef = useRef(view);
   const threadStates = useRef(new Map<string, ThreadSummary["status"]>());
+  const interruptTimer = useRef<number | undefined>(undefined);
   selectedId.current = selected?.id;
   viewRef.current = view;
   const load = useCallback(async () => {
@@ -724,6 +730,25 @@ export default function App() {
     document.addEventListener("visibilitychange", readVisibleThread);
     return () => document.removeEventListener("visibilitychange", readVisibleThread);
   }, []);
+  useEffect(() => {
+    if (!selected || tab !== "chat") return;
+    const users = document.querySelectorAll<HTMLElement>(".conversation article.user");
+    users.item(users.length - 1)?.scrollIntoView?.({ block: "start" });
+  }, [selected?.id, tab]);
+  useEffect(
+    () => () => {
+      if (interruptTimer.current) window.clearTimeout(interruptTimer.current);
+    },
+    [],
+  );
+  const codexGenerating =
+    selected?.status === "running" || Boolean(selected?.messages.some((m) => m.role === "assistant" && m.streaming));
+  useEffect(() => {
+    if (codexGenerating) return;
+    setInterruptArmedThreadId(undefined);
+    if (interruptTimer.current) window.clearTimeout(interruptTimer.current);
+    interruptTimer.current = undefined;
+  }, [codexGenerating, selected?.id]);
   async function enableNotifications() {
     if (!("Notification" in window) || !notificationContextAvailable()) return;
     const permission = await Notification.requestPermission();
@@ -866,6 +891,19 @@ export default function App() {
   }
   async function resolve(request: PendingRequest, value: ResolveRequest) {
     if (selected) await api.resolve(selected.id, request.requestId, value);
+  }
+  async function interruptSelected() {
+    if (!selected || !codexGenerating) return;
+    if (interruptArmedThreadId !== selected.id) {
+      setInterruptArmedThreadId(selected.id);
+      if (interruptTimer.current) window.clearTimeout(interruptTimer.current);
+      interruptTimer.current = window.setTimeout(() => setInterruptArmedThreadId(undefined), 3000);
+      return;
+    }
+    if (interruptTimer.current) window.clearTimeout(interruptTimer.current);
+    interruptTimer.current = undefined;
+    setInterruptArmedThreadId(undefined);
+    await api.interrupt(selected.id);
   }
   async function exitSelected() {
     if (!selected || exiting || !confirm("退出运行中的会话？历史记录不会被删除。")) return;
@@ -1072,9 +1110,9 @@ export default function App() {
                     }}
                   />
                   <div>
-                    {selected.status === "running" && (
-                      <button type="button" className="danger" onClick={() => void api.interrupt(selected.id)}>
-                        中断
+                    {codexGenerating && (
+                      <button type="button" className="danger" onClick={() => void interruptSelected()}>
+                        {interruptArmedThreadId === selected.id ? "再次点击中断" : "中断"}
                       </button>
                     )}
                     <button disabled={selected.status === "exited" || !draft.trim()}>发送</button>

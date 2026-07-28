@@ -537,19 +537,31 @@ export async function buildServer(
   });
   app.post<{
     Params: { id: string; requestId: string };
-    Body: { value?: string; approved?: boolean; answers?: Record<string, { answers: string[] }> };
+    Body: {
+      value?: string;
+      approved?: boolean;
+      scope?: "turn" | "session";
+      answers?: Record<string, { answers: string[] }>;
+    };
   }>(`${apiRoutes.threads}/:id/requests/:requestId`, async (request, reply) => {
     const thread = withThread(request.params.id),
       pending = storage.pendingById(request.params.requestId, thread.id);
     if (!pending) return reply.code(409).send({ error: "already resolved" });
+    const approvalScope = request.body.scope === "session" ? "session" : "turn";
     const response = request.body.answers
       ? { answers: request.body.answers }
       : pending.method === "item/permissions/requestApproval"
         ? request.body.approved
-          ? { permissions: JSON.parse(pending.params).permissions ?? {}, scope: "turn" }
+          ? { permissions: JSON.parse(pending.params).permissions ?? {}, scope: approvalScope }
           : { permissions: {}, scope: "turn" }
         : request.body.approved !== undefined
-          ? { decision: request.body.approved ? "accept" : "decline" }
+          ? {
+              decision: request.body.approved
+                ? approvalScope === "session"
+                  ? "acceptForSession"
+                  : "accept"
+                : "decline",
+            }
           : { answers: { value: { answers: [request.body.value ?? ""] } } };
     await runtime.resolve(thread, JSON.parse(pending.rpcId) as string | number, response);
     storage.resolvePending(request.params.requestId, thread.id);
