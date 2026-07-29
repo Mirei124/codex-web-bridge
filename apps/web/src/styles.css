@@ -431,6 +431,21 @@ nav small {
   background: #fff0ad;
   box-shadow: inset 4px 0 #f0b817;
 }
+.thread-row.waiting {
+  background: #ffe1d8;
+  box-shadow: inset 4px 0 var(--danger);
+}
+.thread-row.waiting .thread-select span::after {
+  content: "待处理";
+  display: inline-block;
+  margin-left: 7px;
+  padding: 1px 6px;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 9px;
+  font-size: 10px;
+  vertical-align: 2px;
+}
 .thread-row.unread .thread-select span::after {
   content: "新";
   display: inline-block;
@@ -441,6 +456,10 @@ nav small {
   border-radius: 9px;
   font-size: 10px;
   vertical-align: 2px;
+}
+.thread-row.waiting .thread-select span::after {
+  content: "待处理";
+  background: var(--danger);
 }
 .thread-select {
   min-width: 0;
@@ -535,6 +554,28 @@ nav small {
   margin: 0;
   background: #fde5e3;
   border-bottom: 1px solid #e87878;
+}
+.attention-banner,
+.scroll-hint {
+  border-radius: 0;
+  min-height: 40px;
+  border-width: 0 0 2px;
+  box-shadow: none;
+}
+.attention-banner.waiting {
+  color: #fff;
+  background: var(--danger);
+  border-color: #b94545;
+}
+.scroll-hint {
+  color: #5b4d31;
+  background: #fff0ad;
+  border-color: #e9c44a;
+}
+.attention-banner:hover:not(:disabled),
+.scroll-hint:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
 }
 .empty {
   margin: auto;

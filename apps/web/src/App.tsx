@@ -676,12 +676,16 @@ export default function App() {
   const [unread, setUnread] = useState<Set<string>>(() => new Set());
   const [toast, setToast] = useState<string>();
   const [interruptArmedThreadId, setInterruptArmedThreadId] = useState<string>();
+  const [showScrollHint, setShowScrollHint] = useState(false);
   const selectedId = useRef<string | undefined>(undefined);
   const viewRef = useRef(view);
+  const threadsRef = useRef<ThreadSummary[]>([]);
   const threadStates = useRef(new Map<string, ThreadSummary["status"]>());
   const interruptTimer = useRef<number | undefined>(undefined);
+  const conversationRef = useRef<HTMLDivElement>(null);
   selectedId.current = selected?.id;
   viewRef.current = view;
+  threadsRef.current = threads;
   const load = useCallback(async () => {
     const [nextHosts, nextThreads] = await Promise.all([api.hosts(), api.threads()]);
     setHosts(nextHosts);
@@ -732,9 +736,19 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!selected || tab !== "chat") return;
-    const users = document.querySelectorAll<HTMLElement>(".conversation article.user");
-    users.item(users.length - 1)?.scrollIntoView?.({ block: "start" });
+    scrollConversationToLastMessage();
   }, [selected?.id, tab]);
+  useEffect(() => {
+    if (!selected || view !== "threads") return;
+    const hash = `#${encodeURIComponent(selected.id)}`;
+    if (window.location.hash !== hash) window.history.replaceState(null, "", hash);
+  }, [selected?.id, view]);
+  useEffect(() => {
+    if (selected || view !== "threads") return;
+    const id = decodeURIComponent((window.location.hash ?? "").replace(/^#/, ""));
+    const thread = threads.find((item) => item.id === id);
+    if (thread) void selectThread(thread, { preserveHash: true });
+  }, [threads, selected?.id, view]);
   useEffect(
     () => () => {
       if (interruptTimer.current) window.clearTimeout(interruptTimer.current);
@@ -754,12 +768,6 @@ export default function App() {
     const permission = await Notification.requestPermission();
     setToast(permission === "granted" ? undefined : notificationProblem());
   }
-  useEffect(() => {
-    const rows = document.querySelectorAll<HTMLElement>(".thread-row");
-    rows.forEach((row, index) =>
-      row.classList.toggle("unread", Boolean(threads[index] && unread.has(threads[index]!.id))),
-    );
-  }, [threads, unread]);
   useEffect(() => {
     document.querySelector(".toast")?.remove();
     if (!toast) return;
@@ -784,6 +792,34 @@ export default function App() {
     document.body.append(element);
     return () => element.remove();
   }, [toast]);
+  function selectedThreadIsVisible(threadId: string) {
+    return selectedId.current === threadId && viewRef.current === "threads" && document.visibilityState === "visible";
+  }
+  function notifyUnreadThread(threadId: string, title: string, body: string) {
+    if (selectedThreadIsVisible(threadId)) return;
+    setUnread((old) => new Set(old).add(threadId));
+    if ("Notification" in window && notificationContextAvailable() && Notification.permission === "granted") {
+      const notice = new Notification(title, { body, tag: `cwb-${threadId}` });
+      notice.onclick = () => {
+        const thread = threadsRef.current.find((item) => item.id === threadId);
+        window.focus();
+        if (thread) {
+          setView("threads");
+          void selectThread(thread);
+        }
+        notice.close();
+      };
+    }
+  }
+  function conversationNearBottom() {
+    const element = conversationRef.current;
+    return !element || element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+  }
+  function scrollConversationToLastMessage() {
+    const messages = conversationRef.current?.querySelectorAll<HTMLElement>("article");
+    messages?.item(messages.length - 1)?.scrollIntoView?.({ block: "start" });
+    setShowScrollHint(false);
+  }
   const handleEvent = useCallback((event: ServerEvent) => {
     if (event.type === "snapshot") {
       threadStates.current.set(event.thread.id, event.thread.status);
@@ -797,40 +833,26 @@ export default function App() {
       const completed =
         (previous === "running" || previous === "waiting") &&
         (event.thread.status === "idle" || event.thread.status === "error");
-      const currentlyReading =
-        selectedId.current === event.thread.id &&
-        viewRef.current === "threads" &&
-        document.visibilityState === "visible";
-      if (completed && !currentlyReading) {
-        setUnread((old) => new Set(old).add(event.thread.id));
-        if ("Notification" in window && notificationContextAvailable() && Notification.permission === "granted") {
-          const notice = new Notification(event.thread.status === "error" ? "Codex 会话执行失败" : "Codex 已完成回答", {
-            body: event.thread.title,
-            tag: `cwb-${event.thread.id}`,
-          });
-          notice.onclick = () => {
-            window.focus();
-            void api.thread(event.thread.id).then((value) => {
-              setSelected(value);
-              setView("threads");
-              setUnread((old) => {
-                const next = new Set(old);
-                next.delete(event.thread.id);
-                return next;
-              });
-            });
-            notice.close();
-          };
-        }
-      }
+      if (completed)
+        notifyUnreadThread(
+          event.thread.id,
+          event.thread.status === "error" ? "Codex 会话执行失败" : "Codex 已完成回答",
+          event.thread.title,
+        );
+      if (event.thread.status === "waiting")
+        notifyUnreadThread(event.thread.id, "Codex 需要你操作", event.thread.title);
     }
     if (event.type === "thread.deleted") {
       setThreads((old) => old.filter((t) => t.id !== event.threadId));
       setSelected((old) => (old?.id === event.threadId ? undefined : old));
     }
-    if (event.type === "message.created")
+    if (event.type === "message.created") {
+      if (event.threadId === selectedId.current && event.message.role === "assistant" && !conversationNearBottom())
+        setShowScrollHint(true);
       setSelected((old) => (old?.id === event.threadId ? { ...old, messages: [...old.messages, event.message] } : old));
-    if (event.type === "message.delta")
+    }
+    if (event.type === "message.delta") {
+      if (event.threadId === selectedId.current && !conversationNearBottom()) setShowScrollHint(true);
       setSelected((old) =>
         old?.id === event.threadId
           ? {
@@ -841,6 +863,7 @@ export default function App() {
             }
           : old,
       );
+    }
     if (event.type === "message.completed")
       setSelected((old) =>
         old?.id === event.threadId
@@ -870,7 +893,7 @@ export default function App() {
     threads.map((thread) => thread.id),
     handleEvent,
   );
-  async function selectThread(thread: ThreadSummary) {
+  async function selectThread(thread: ThreadSummary, options: { preserveHash?: boolean } = {}) {
     setUnread((old) => {
       const next = new Set(old);
       next.delete(thread.id);
@@ -880,6 +903,7 @@ export default function App() {
     setScreenshot(undefined);
     setOperationError("");
     setSelected(await api.thread(thread.id));
+    if (!options.preserveHash) window.history.replaceState(null, "", `#${encodeURIComponent(thread.id)}`);
     setNavigationOpen(false);
   }
   async function send(event: FormEvent) {
@@ -1011,7 +1035,12 @@ export default function App() {
         <h3>会话</h3>
         <nav>
           {threads.map((t) => (
-            <div className={`thread-row ${selected?.id === t.id && view === "threads" ? "active" : ""}`} key={t.id}>
+            <div
+              className={`thread-row ${selected?.id === t.id && view === "threads" ? "active" : ""} ${
+                unread.has(t.id) ? "unread" : ""
+              } ${t.status === "waiting" ? "waiting" : ""}`}
+              key={t.id}
+            >
               <button
                 className="thread-select"
                 onClick={() => {
@@ -1082,7 +1111,18 @@ export default function App() {
             {operationError && <div className="operation-error error">{operationError}</div>}
             {tab === "chat" ? (
               <>
-                <div className="conversation">
+                {selected.status === "waiting" && (
+                  <button className="attention-banner waiting" type="button" onClick={scrollConversationToLastMessage}>
+                    需要你处理权限或输入请求
+                  </button>
+                )}
+                <div
+                  className="conversation"
+                  ref={conversationRef}
+                  onScroll={() => {
+                    if (conversationNearBottom()) setShowScrollHint(false);
+                  }}
+                >
                   {selected.messages.map((m) => (
                     <article className={m.role} key={m.id}>
                       <label>
@@ -1096,6 +1136,11 @@ export default function App() {
                     <RequestCard key={r.requestId} request={r} onResolve={(v) => void resolve(r, v)} />
                   ))}
                 </div>
+                {showScrollHint && (
+                  <button className="scroll-hint" type="button" onClick={scrollConversationToLastMessage}>
+                    有新回复，向下滑动查看
+                  </button>
+                )}
                 <form className="composer" onSubmit={send}>
                   <textarea
                     disabled={selected.status === "exited"}

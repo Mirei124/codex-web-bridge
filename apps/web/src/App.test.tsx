@@ -105,6 +105,7 @@ describe("dashboard security and operations", () => {
     WebSocketStub.instances = [];
     terminalInput = undefined;
     terminalWrites = [];
+    window.history.replaceState(null, "", "/");
     vi.stubGlobal("WebSocket", WebSocketStub);
   });
   afterEach(() => {
@@ -649,7 +650,7 @@ describe("dashboard security and operations", () => {
     await waitFor(() => expect(screen.queryByText("生成中")).not.toBeInTheDocument());
   });
 
-  it("scrolls to the last user message when opening a thread", async () => {
+  it("scrolls to the last message when opening a thread", async () => {
     const original = HTMLElement.prototype.scrollIntoView,
       scrolled: string[] = [];
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
@@ -676,11 +677,41 @@ describe("dashboard security and operations", () => {
           return defaultFetch(input, init);
         });
       await openThread(fetch);
-      await waitFor(() => expect(scrolled.at(-1)).toContain("Latest request"));
+      await waitFor(() => expect(scrolled.at(-1)).toContain("Latest answer"));
     } finally {
       if (original) HTMLElement.prototype.scrollIntoView = original;
       else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
     }
+  });
+
+  it("restores the selected thread from the URL hash after refresh", async () => {
+    window.history.replaceState(null, "", "#t");
+    const fetch = authenticatedFetch();
+    vi.stubGlobal("fetch", fetch);
+    render(<App />);
+    expect(await screen.findByText("Ready")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith("/api/threads/t", expect.anything());
+    expect(window.location.hash).toBe("#t");
+  });
+
+  it("shows a scroll hint when a new Codex message arrives below the viewport", async () => {
+    await openThread();
+    const conversation = document.querySelector<HTMLElement>(".conversation")!;
+    Object.defineProperties(conversation, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, value: 100 },
+    });
+    WebSocketStub.instances.at(-1)?.emit({
+      type: "message.created",
+      threadId: "t",
+      message: { id: "assistant-2", role: "assistant", text: "New answer", createdAt: "2026-01-01" },
+    });
+    const hint = await screen.findByRole("button", { name: "有新回复，向下滑动查看" });
+    fireEvent.click(hint);
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "有新回复，向下滑动查看" })).not.toBeInTheDocument(),
+    );
   });
 
   it("uses generation state to control the interrupt action", async () => {
@@ -761,10 +792,17 @@ describe("dashboard security and operations", () => {
     );
     const socket = WebSocketStub.instances.at(-1)!;
     socket.emit({ type: "snapshot", thread: { ...thread, ...other, messages: [], pendingRequests: [] } });
+    socket.emit({ type: "thread.updated", thread: { ...other, status: "waiting", updatedAt: "2026-01-02" } });
+    await waitFor(() => expect(screen.getByText("Background").closest(".thread-row")).toHaveClass("waiting"));
+    expect(screen.getByText("Background").closest(".thread-row")).toHaveClass("unread");
+    expect(NotificationStub.instances[0]).toMatchObject({
+      title: "Codex 需要你操作",
+      options: { body: "Background" },
+    });
     socket.emit({ type: "thread.updated", thread: { ...other, status: "idle", updatedAt: "2026-01-02" } });
     await waitFor(() => expect(screen.getByText("Background").closest(".thread-row")).toHaveClass("unread"));
     expect(document.title).toBe("(1) Codex Bridge");
-    expect(NotificationStub.instances[0]).toMatchObject({ title: "Codex 已完成回答", options: { body: "Background" } });
+    expect(NotificationStub.instances[1]).toMatchObject({ title: "Codex 已完成回答", options: { body: "Background" } });
     fireEvent.click(screen.getByText("Background").closest("button")!);
     await waitFor(() => expect(document.title).toBe("Codex Bridge"));
   });
