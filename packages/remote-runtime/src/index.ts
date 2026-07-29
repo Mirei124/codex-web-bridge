@@ -239,7 +239,14 @@ export class TmuxCodexRuntime {
     await this.prepareRuntimeDirectory(runtimeDirectory);
     const panes = await this.findPanes(name);
     if (panes)
-      return { name, appServerPane: panes.appServerPane, viewerPane: panes.viewerPane, remotePort, fifoPath, appServerLogPath };
+      return {
+        name,
+        appServerPane: panes.appServerPane,
+        viewerPane: panes.viewerPane,
+        remotePort,
+        fifoPath,
+        appServerLogPath,
+      };
     const existing = await this.remote.execute("test", ["-e", fifoPath]);
     if (existing.code === 0) {
       const isFifo = await this.remote.execute("test", ["-p", fifoPath]);

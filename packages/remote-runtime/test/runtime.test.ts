@@ -21,7 +21,8 @@ class FakeRemote implements RemoteExecutor {
     this.calls.push([program, args]);
     if (program === "command" && args[0] === "-v")
       return { stdout: `/resolved/${args[1]}\n`, stderr: "", code: this.commandLookupCode };
-    if (program === "/resolved/codex" && args[0] === "--version") return { stdout: "codex 1.0.0\n", stderr: "", code: 0 };
+    if (program === "/resolved/codex" && args[0] === "--version")
+      return { stdout: "codex 1.0.0\n", stderr: "", code: 0 };
     if (program.endsWith("tmux") && args[0] === "has-session")
       return { stdout: "", stderr: "", code: this.sessionExists ? 0 : 1 };
     if (program.endsWith("tmux") && args[0] === "list-panes")
@@ -161,7 +162,13 @@ describe("remote command safety", () => {
     remote.appServerLog = "/data1/chenkeyu/.local/share/pnpm/codex: 20: exec: node: not found\n";
     await expect(
       new TmuxCodexRuntime(remote).waitUntilReady(
-        { name: "ready", appServerPane: "ready:0.0", remotePort: 4000, fifoPath: "/tmp/x", appServerLogPath: "/tmp/log" },
+        {
+          name: "ready",
+          appServerPane: "ready:0.0",
+          remotePort: 4000,
+          fifoPath: "/tmp/x",
+          appServerLogPath: "/tmp/log",
+        },
         { timeoutMs: 1, intervalMs: 1 },
       ),
     ).rejects.toThrow(/exec: node: not found/);
