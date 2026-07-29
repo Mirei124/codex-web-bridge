@@ -7,6 +7,7 @@ import type {
   ResolveRequest,
   ServerEvent,
   ThreadDetail,
+  ThreadCreateDefaults,
   ThreadSummary,
   UpdateSettingsRequest,
 } from "@cwb/protocol";
@@ -166,18 +167,29 @@ function CreateDialog({
   const [prependPath, setPrependPath] = useState("");
   const [error, setError] = useState("");
   const [discovered, setDiscovered] = useState<CodexThreadSummary[]>([]);
+  const [defaults, setDefaults] = useState<ThreadCreateDefaults>({ hosts: [], cwdHistory: [] });
   const [loadingDefaults, setLoadingDefaults] = useState(mode === "create");
+  function applyHostDefaults(nextHostId: string, source = defaults) {
+    const remembered = source.hosts.find((item) => item.hostId === nextHostId);
+    setCwd(remembered?.cwd ?? "");
+    setProxy(remembered?.proxy ?? "");
+    setPrependPath(remembered?.prependPath ?? "");
+  }
   useEffect(() => {
     if (mode !== "create") return;
     let active = true;
     api
       .threadCreateDefaults()
       .then((value) => {
-        if (!active || !value) return;
-        if (hosts.some((host) => host.id === value.hostId)) setHostId(value.hostId);
-        setCwd(value.cwd);
-        setProxy(value.proxy ?? "");
-        setPrependPath(value.prependPath ?? "");
+        if (!active) return;
+        const next = value ?? { hosts: [], cwdHistory: [] };
+        setDefaults(next);
+        if (!value) return;
+        const rememberedHost =
+          next.lastHostId && hosts.some((host) => host.id === next.lastHostId) ? next.lastHostId : hosts[0]?.id;
+        if (!rememberedHost) return;
+        setHostId(rememberedHost);
+        applyHostDefaults(rememberedHost, next);
       })
       .catch(() => undefined)
       .finally(() => {
@@ -186,7 +198,7 @@ function CreateDialog({
     return () => {
       active = false;
     };
-  }, [mode]);
+  }, [hosts, mode]);
   useEffect(() => {
     if (mode !== "resume" || !hostId) return;
     let active = true;
@@ -207,6 +219,18 @@ function CreateDialog({
     if (!item) return;
     setThreadId(item.id);
     if (item.cwd) setCwd(item.cwd);
+  }
+  function changeHost(nextHostId: string) {
+    setHostId(nextHostId);
+    if (mode === "create") applyHostDefaults(nextHostId);
+  }
+  async function deleteCwdHistory(value: string) {
+    try {
+      await api.deleteThreadCreateCwd({ cwd: value });
+      setDefaults((old) => ({ ...old, cwdHistory: old.cwdHistory.filter((item) => item !== value) }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除工作目录历史失败");
+    }
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -234,7 +258,7 @@ function CreateDialog({
         <h2>{mode === "create" ? "创建会话" : "恢复会话"}</h2>
         <label>
           主机
-          <select disabled={loadingDefaults} value={hostId} onChange={(e) => setHostId(e.target.value)}>
+          <select disabled={loadingDefaults} value={hostId} onChange={(e) => changeHost(e.target.value)}>
             {hosts.map((h) => (
               <option key={h.id} value={h.id}>
                 {h.name}
@@ -272,10 +296,37 @@ function CreateDialog({
           <input
             disabled={loadingDefaults}
             autoFocus={mode === "create"}
+            list={mode === "create" && defaults.cwdHistory.length ? "thread-create-cwd-history" : undefined}
             value={cwd}
             onChange={(e) => setCwd(e.target.value)}
             placeholder="/srv/project"
           />
+          {mode === "create" && defaults.cwdHistory.length > 0 && (
+            <>
+              <datalist id="thread-create-cwd-history">
+                {defaults.cwdHistory.map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+              <div className="cwd-history" aria-label="曾用工作目录">
+                {defaults.cwdHistory.map((item) => (
+                  <span key={item}>
+                    <button type="button" className="secondary" onClick={() => setCwd(item)}>
+                      {item}
+                    </button>
+                    <button
+                      type="button"
+                      className="icon danger"
+                      aria-label={`删除 ${item}`}
+                      onClick={() => void deleteCwdHistory(item)}
+                    >
+                      x
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
         </label>
         <label>
           代理地址（可选）
@@ -1111,7 +1162,7 @@ export default function App() {
             {operationError && <div className="operation-error error">{operationError}</div>}
             {tab === "chat" ? (
               <>
-                {selected.status === "waiting" && (
+                {selected.pendingRequests.length > 0 && (
                   <button className="attention-banner waiting" type="button" onClick={scrollConversationToLastMessage}>
                     需要你处理权限或输入请求
                   </button>

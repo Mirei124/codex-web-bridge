@@ -1,6 +1,7 @@
 import type {
   CodexThreadSummary,
   CreateThreadRequest,
+  DeleteThreadCreateCwdRequest,
   HostConfig,
   HostSummary,
   LoginRequest,
@@ -9,6 +10,7 @@ import type {
   SessionResponse,
   SendMessageRequest,
   SettingsResponse,
+  SaveThreadCreateDefaultsRequest,
   ThreadCreateDefaults,
   ThreadDetail,
   ThreadSummary,
@@ -82,8 +84,10 @@ export const api = {
   codexThreads: (hostId: string) => request<CodexThreadSummary[]>(apiRoutes.hostCodexThreads(hostId)),
   threads: () => request<ThreadSummary[]>(apiRoutes.threads),
   threadCreateDefaults: () => request<ThreadCreateDefaults | null>(apiRoutes.threadCreateDefaults),
-  saveThreadCreateDefaults: (body: ThreadCreateDefaults) =>
+  saveThreadCreateDefaults: (body: SaveThreadCreateDefaultsRequest) =>
     request<void>(apiRoutes.threadCreateDefaults, { method: "PUT", body: JSON.stringify(body) }),
+  deleteThreadCreateCwd: (body: DeleteThreadCreateCwdRequest) =>
+    request<void>(apiRoutes.threadCreateCwdHistory, { method: "DELETE", body: JSON.stringify(body) }),
   thread: (id: string) => request<ThreadDetail>(`${apiRoutes.threads}/${encodeURIComponent(id)}`),
   deleteThread: (id: string) => request<void>(`${apiRoutes.threads}/${encodeURIComponent(id)}`, { method: "DELETE" }),
   createThread: (body: CreateThreadRequest) =>

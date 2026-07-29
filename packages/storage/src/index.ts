@@ -70,10 +70,16 @@ export interface PendingRecord {
   createdAt: number;
 }
 export interface ThreadCreateDefaultsRecord {
+  lastHostId?: string;
+  hosts: ThreadCreateHostDefaultsRecord[];
+  cwdHistory: string[];
+}
+export interface ThreadCreateHostDefaultsRecord {
   hostId: string;
   cwd: string;
   proxy?: string;
   prependPath?: string;
+  updatedAt: number;
 }
 
 export class Storage {
@@ -115,6 +121,18 @@ export class Storage {
         singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
         host_id TEXT NOT NULL, cwd TEXT NOT NULL, proxy TEXT, prepend_path TEXT
       );
+      CREATE TABLE IF NOT EXISTS thread_create_preferences (
+        singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+        last_host_id TEXT
+      );
+      CREATE TABLE IF NOT EXISTS thread_create_host_defaults (
+        host_id TEXT PRIMARY KEY,
+        cwd TEXT NOT NULL, proxy TEXT, prepend_path TEXT, updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS thread_create_cwd_history (
+        cwd TEXT PRIMARY KEY,
+        updated_at INTEGER NOT NULL
+      );
     `);
     const hostColumns = this.db.prepare("PRAGMA table_info(hosts)").all() as Array<{ name: string }>;
     if (!hostColumns.some((column) => column.name === "prepend_path")) {
@@ -144,6 +162,7 @@ export class Storage {
       this.db.exec("ALTER TABLE pending_requests ADD COLUMN method TEXT NOT NULL DEFAULT ''");
     if (!pendingColumns.some((column) => column.name === "params"))
       this.db.exec("ALTER TABLE pending_requests ADD COLUMN params TEXT NOT NULL DEFAULT '{}'");
+    this.migrateThreadCreateDefaults();
   }
   createSession(session: SessionRecord): void {
     this.db
@@ -199,7 +218,13 @@ export class Storage {
   }
   deleteHost(id: string): boolean {
     const deleted = this.db.prepare("DELETE FROM hosts WHERE id=?").run(id).changes === 1;
-    if (deleted) this.db.prepare("DELETE FROM thread_create_defaults WHERE host_id=?").run(id);
+    if (deleted) {
+      this.db.prepare("DELETE FROM thread_create_defaults WHERE host_id=?").run(id);
+      this.db.prepare("DELETE FROM thread_create_host_defaults WHERE host_id=?").run(id);
+      this.db
+        .prepare("UPDATE thread_create_preferences SET last_host_id=NULL WHERE singleton=1 AND last_host_id=?")
+        .run(id);
+    }
     return deleted;
   }
   threads(): ThreadRecord[] {
@@ -323,27 +348,79 @@ export class Storage {
         .run(now, threadId);
     return ids;
   }
-  threadCreateDefaults(): ThreadCreateDefaultsRecord | undefined {
-    const value = this.db
+  private migrateThreadCreateDefaults(): void {
+    const migrated = this.db.prepare("SELECT COUNT(*) AS count FROM thread_create_host_defaults").get() as
+      { count: number } | undefined;
+    if (migrated?.count) return;
+    const old = this.db
       .prepare(
         "SELECT host_id AS hostId,cwd,proxy,prepend_path AS prependPath FROM thread_create_defaults WHERE singleton=1",
       )
       .get() as { hostId: string; cwd: string; proxy: string | null; prependPath: string | null } | undefined;
-    return value
-      ? {
-          hostId: value.hostId,
-          cwd: value.cwd,
-          ...(value.proxy ? { proxy: value.proxy } : {}),
-          ...(value.prependPath ? { prependPath: value.prependPath } : {}),
-        }
-      : undefined;
-  }
-  saveThreadCreateDefaults(value: ThreadCreateDefaultsRecord): void {
+    if (!old) return;
+    const now = Date.now();
+    this.db
+      .prepare("INSERT OR IGNORE INTO thread_create_preferences(singleton,last_host_id) VALUES(1,?)")
+      .run(old.hostId);
     this.db
       .prepare(
-        "INSERT INTO thread_create_defaults(singleton,host_id,cwd,proxy,prepend_path) VALUES(1,?,?,?,?) ON CONFLICT(singleton) DO UPDATE SET host_id=excluded.host_id,cwd=excluded.cwd,proxy=excluded.proxy,prepend_path=excluded.prepend_path",
+        "INSERT OR IGNORE INTO thread_create_host_defaults(host_id,cwd,proxy,prepend_path,updated_at) VALUES(?,?,?,?,?)",
       )
-      .run(value.hostId, value.cwd, value.proxy ?? null, value.prependPath ?? null);
+      .run(old.hostId, old.cwd, old.proxy, old.prependPath, now);
+    this.db.prepare("INSERT OR IGNORE INTO thread_create_cwd_history(cwd,updated_at) VALUES(?,?)").run(old.cwd, now);
+  }
+  threadCreateDefaults(): ThreadCreateDefaultsRecord | undefined {
+    const preferences = this.db
+        .prepare("SELECT last_host_id AS lastHostId FROM thread_create_preferences WHERE singleton=1")
+        .get() as { lastHostId: string | null } | undefined,
+      hosts = this.db
+        .prepare(
+          "SELECT host_id AS hostId,cwd,proxy,prepend_path AS prependPath,updated_at AS updatedAt FROM thread_create_host_defaults ORDER BY updated_at DESC",
+        )
+        .all() as Array<{
+        hostId: string;
+        cwd: string;
+        proxy: string | null;
+        prependPath: string | null;
+        updatedAt: number;
+      }>,
+      cwdHistory = (
+        this.db.prepare("SELECT cwd FROM thread_create_cwd_history ORDER BY updated_at DESC").all() as Array<{
+          cwd: string;
+        }>
+      ).map((row) => row.cwd);
+    if (!preferences?.lastHostId && hosts.length === 0 && cwdHistory.length === 0) return undefined;
+    return {
+      ...(preferences?.lastHostId ? { lastHostId: preferences.lastHostId } : {}),
+      hosts: hosts.map((value) => ({
+        hostId: value.hostId,
+        cwd: value.cwd,
+        ...(value.proxy ? { proxy: value.proxy } : {}),
+        ...(value.prependPath ? { prependPath: value.prependPath } : {}),
+        updatedAt: value.updatedAt,
+      })),
+      cwdHistory,
+    };
+  }
+  saveThreadCreateDefaults(value: ThreadCreateHostDefaultsRecord): void {
+    this.db
+      .prepare(
+        "INSERT INTO thread_create_preferences(singleton,last_host_id) VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET last_host_id=excluded.last_host_id",
+      )
+      .run(value.hostId);
+    this.db
+      .prepare(
+        "INSERT INTO thread_create_host_defaults(host_id,cwd,proxy,prepend_path,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(host_id) DO UPDATE SET cwd=excluded.cwd,proxy=excluded.proxy,prepend_path=excluded.prepend_path,updated_at=excluded.updated_at",
+      )
+      .run(value.hostId, value.cwd, value.proxy ?? null, value.prependPath ?? null, value.updatedAt);
+    this.db
+      .prepare(
+        "INSERT INTO thread_create_cwd_history(cwd,updated_at) VALUES(?,?) ON CONFLICT(cwd) DO UPDATE SET updated_at=excluded.updated_at",
+      )
+      .run(value.cwd, value.updatedAt);
+  }
+  deleteThreadCreateCwd(cwd: string): boolean {
+    return this.db.prepare("DELETE FROM thread_create_cwd_history WHERE cwd=?").run(cwd).changes === 1;
   }
   close(): void {
     this.db.close();

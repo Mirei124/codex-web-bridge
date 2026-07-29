@@ -768,6 +768,29 @@ nav small {
   line-height: 1.45;
   padding: 0 6px;
 }
+.cwd-history {
+  display: grid;
+  gap: 7px;
+  padding: 0 2px;
+}
+.cwd-history span {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 7px;
+}
+.cwd-history button {
+  min-height: 34px;
+}
+.cwd-history button:first-child {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cwd-history .icon {
+  padding: 0;
+  font-weight: 900;
+}
 .terminal-panel {
   padding: 18px;
   min-height: 0;

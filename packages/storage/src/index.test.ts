@@ -70,18 +70,40 @@ describe("Storage", () => {
     storage.upsertHost({ ...host, prependPath: "/other/bin" });
     expect(storage.host("h")?.prependPath).toBe("/other/bin");
   });
-  it("persists the last Web thread creation form", () => {
+  it("persists Web thread creation defaults per host with cwd history", () => {
     storage = new Storage(":memory:");
     expect(storage.threadCreateDefaults()).toBeUndefined();
-    storage.saveThreadCreateDefaults({ hostId: "h", cwd: "/work", proxy: "http://proxy:8080", prependPath: "/bin" });
-    expect(storage.threadCreateDefaults()).toEqual({
+    storage.saveThreadCreateDefaults({
       hostId: "h",
       cwd: "/work",
       proxy: "http://proxy:8080",
       prependPath: "/bin",
+      updatedAt: 1,
     });
-    storage.saveThreadCreateDefaults({ hostId: "other", cwd: "/next" });
-    expect(storage.threadCreateDefaults()).toEqual({ hostId: "other", cwd: "/next" });
+    expect(storage.threadCreateDefaults()).toEqual({
+      lastHostId: "h",
+      hosts: [
+        {
+          hostId: "h",
+          cwd: "/work",
+          proxy: "http://proxy:8080",
+          prependPath: "/bin",
+          updatedAt: 1,
+        },
+      ],
+      cwdHistory: ["/work"],
+    });
+    storage.saveThreadCreateDefaults({ hostId: "other", cwd: "/next", updatedAt: 2 });
+    expect(storage.threadCreateDefaults()).toEqual({
+      lastHostId: "other",
+      hosts: [
+        { hostId: "other", cwd: "/next", updatedAt: 2 },
+        { hostId: "h", cwd: "/work", proxy: "http://proxy:8080", prependPath: "/bin", updatedAt: 1 },
+      ],
+      cwdHistory: ["/next", "/work"],
+    });
+    expect(storage.deleteThreadCreateCwd("/work")).toBe(true);
+    expect(storage.threadCreateDefaults()?.cwdHistory).toEqual(["/next"]);
   });
   it("deletes only bridge-owned thread data", () => {
     storage = new Storage(":memory:");
@@ -125,10 +147,10 @@ describe("Storage", () => {
       identityFile: "",
       createdAt: 1,
     });
-    storage.saveThreadCreateDefaults({ hostId: "h", cwd: "/work" });
+    storage.saveThreadCreateDefaults({ hostId: "h", cwd: "/work", updatedAt: 1 });
     expect(storage.deleteHost("h")).toBe(true);
     expect(storage.host("h")).toBeUndefined();
-    expect(storage.threadCreateDefaults()).toBeUndefined();
+    expect(storage.threadCreateDefaults()).toEqual({ hosts: [], cwdHistory: ["/work"] });
     expect(storage.deleteHost("h")).toBe(false);
   });
 });

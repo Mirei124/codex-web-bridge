@@ -199,9 +199,23 @@ describe("dashboard security and operations", () => {
       const path = typeof input === "string" ? input : input.toString();
       if (path === "/api/preferences/thread-create" && !init?.method)
         return Promise.resolve(
-          response({ hostId: "a", cwd: "/remembered", proxy: "http://proxy:8080", prependPath: "/custom/bin" }),
+          response({
+            lastHostId: "a",
+            hosts: [
+              {
+                hostId: "a",
+                cwd: "/remembered",
+                proxy: "http://proxy:8080",
+                prependPath: "/custom/bin",
+                updatedAt: "2026-01-01",
+              },
+            ],
+            cwdHistory: ["/remembered", "/older"],
+          }),
         );
       if (path === "/api/preferences/thread-create" && init?.method === "PUT")
+        return Promise.resolve(response(undefined, 204));
+      if (path === "/api/preferences/thread-create/cwd-history" && init?.method === "DELETE")
         return Promise.resolve(response(undefined, 204));
       return baseFetch(input, init);
     });
@@ -211,6 +225,17 @@ describe("dashboard security and operations", () => {
     expect(await screen.findByDisplayValue("/remembered")).toBeInTheDocument();
     expect(screen.getByDisplayValue("http://proxy:8080")).toBeInTheDocument();
     expect(screen.getByDisplayValue("/custom/bin")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "/older" }));
+    expect(screen.getByLabelText("工作目录")).toHaveValue("/older");
+    fireEvent.click(screen.getByRole("button", { name: "删除 /older" }));
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/preferences/thread-create/cwd-history",
+        expect.objectContaining({ method: "DELETE", body: JSON.stringify({ cwd: "/older" }) }),
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "/older" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "/remembered" } });
     fireEvent.click(screen.getByRole("button", { name: "创建" }));
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
@@ -223,6 +248,54 @@ describe("dashboard security and operations", () => {
             proxy: "http://proxy:8080",
             prependPath: "/custom/bin",
           }),
+        }),
+      ),
+    );
+  });
+
+  it("keeps create-thread defaults separate for each host", async () => {
+    const baseFetch = authenticatedFetch();
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const path = typeof input === "string" ? input : input.toString();
+      if (path === "/api/hosts")
+        return Promise.resolve(
+          response([
+            { id: "a", name: "Machine A", address: "10.0.0.2", status: "online" },
+            { id: "b", name: "Machine B", address: "10.0.0.3", status: "online" },
+          ]),
+        );
+      if (path === "/api/preferences/thread-create" && !init?.method)
+        return Promise.resolve(
+          response({
+            lastHostId: "b",
+            hosts: [
+              { hostId: "b", cwd: "/repo/b", proxy: "http://b-proxy:8080", updatedAt: "2026-01-02" },
+              { hostId: "a", cwd: "/repo/a", prependPath: "/a/bin", updatedAt: "2026-01-01" },
+            ],
+            cwdHistory: ["/repo/b", "/repo/a"],
+          }),
+        );
+      if (path === "/api/preferences/thread-create" && init?.method === "PUT")
+        return Promise.resolve(response(undefined, 204));
+      return baseFetch(input, init);
+    });
+    vi.stubGlobal("fetch", fetch);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /新会话/ }));
+    expect(await screen.findByLabelText("主机")).toHaveValue("b");
+    expect(screen.getByLabelText("工作目录")).toHaveValue("/repo/b");
+    expect(screen.getByLabelText("代理地址（可选）")).toHaveValue("http://b-proxy:8080");
+    fireEvent.change(screen.getByLabelText("主机"), { target: { value: "a" } });
+    expect(screen.getByLabelText("工作目录")).toHaveValue("/repo/a");
+    expect(screen.getByLabelText("代理地址（可选）")).toHaveValue("");
+    expect(screen.getByLabelText(/^会话前置 PATH/)).toHaveValue("/a/bin");
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/preferences/thread-create",
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ hostId: "a", cwd: "/repo/a", prependPath: "/a/bin" }),
         }),
       ),
     );
@@ -413,6 +486,13 @@ describe("dashboard security and operations", () => {
     );
     expect(screen.getByRole("button", { name: "退出会话" })).toBeEnabled();
     expect(screen.getByText("Ready")).toBeInTheDocument();
+  });
+
+  it("hides the action banner when all pending requests resolve", async () => {
+    await openThread();
+    expect(screen.getByText("需要你处理权限或输入请求")).toBeInTheDocument();
+    WebSocketStub.instances.at(-1)?.emit({ type: "request.resolved", threadId: "t", requestId: "approve-1" });
+    await waitFor(() => expect(screen.queryByText("需要你处理权限或输入请求")).not.toBeInTheDocument());
   });
 
   it("sends session scope for allow all approvals", async () => {

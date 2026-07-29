@@ -134,7 +134,18 @@ export interface CreateThreadRequest {
   proxy?: string;
   prependPath?: string;
 }
-export type ThreadCreateDefaults = CreateThreadRequest;
+export interface ThreadCreateHostDefaults extends CreateThreadRequest {
+  updatedAt: string;
+}
+export interface ThreadCreateDefaults {
+  lastHostId?: string;
+  hosts: ThreadCreateHostDefaults[];
+  cwdHistory: string[];
+}
+export type SaveThreadCreateDefaultsRequest = CreateThreadRequest;
+export interface DeleteThreadCreateCwdRequest {
+  cwd: string;
+}
 export interface ResumeThreadRequest {
   hostId: string;
   codexThreadId: string;
@@ -239,6 +250,7 @@ export const apiRoutes = {
   settings: "/api/settings",
   threads: "/api/threads",
   threadCreateDefaults: "/api/preferences/thread-create",
+  threadCreateCwdHistory: "/api/preferences/thread-create/cwd-history",
   resumeThread: "/api/threads/resume",
   resumeExitedThread: (threadId: string) => `/api/threads/${encodeURIComponent(threadId)}/resume`,
   events: "/api/events",

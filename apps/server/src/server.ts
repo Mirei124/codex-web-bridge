@@ -11,9 +11,9 @@ import {
   apiRoutes,
   serverEventThreadId,
   type PendingRequest,
+  type SaveThreadCreateDefaultsRequest,
   type ServerEvent,
   type SettingsResponse,
-  type ThreadCreateDefaults,
   type ThreadDetail,
   type ThreadSummary,
   type UpdateSettingsRequest,
@@ -188,8 +188,16 @@ export async function buildServer(
     dataDir: paths().root,
     restartRequired: JSON.stringify(savedConfig) !== JSON.stringify(config),
   }));
-  app.get(apiRoutes.threadCreateDefaults, async () => storage.threadCreateDefaults() ?? null);
-  app.put<{ Body: ThreadCreateDefaults }>(apiRoutes.threadCreateDefaults, async (request, reply) => {
+  app.get(apiRoutes.threadCreateDefaults, async () => {
+    const value = storage.threadCreateDefaults();
+    return value
+      ? {
+          ...value,
+          hosts: value.hosts.map((host) => ({ ...host, updatedAt: new Date(host.updatedAt).toISOString() })),
+        }
+      : null;
+  });
+  app.put<{ Body: SaveThreadCreateDefaultsRequest }>(apiRoutes.threadCreateDefaults, async (request, reply) => {
     const value = request.body,
       host = value && storage.host(value.hostId),
       proxy = value && normalizedProxy(value.proxy),
@@ -203,7 +211,13 @@ export async function buildServer(
       (prependPath && !validPrependPath(prependPath))
     )
       return reply.code(400).send({ error: "invalid thread creation defaults" });
-    storage.saveThreadCreateDefaults({ hostId: host.id, cwd: value.cwd, proxy, prependPath });
+    storage.saveThreadCreateDefaults({ hostId: host.id, cwd: value.cwd, proxy, prependPath, updatedAt: Date.now() });
+    return reply.code(204).send();
+  });
+  app.delete<{ Body: { cwd?: string } }>(apiRoutes.threadCreateCwdHistory, async (request, reply) => {
+    const cwd = request.body?.cwd;
+    if (typeof cwd !== "string" || !isAbsolute(cwd)) return reply.code(400).send({ error: "invalid cwd" });
+    storage.deleteThreadCreateCwd(cwd);
     return reply.code(204).send();
   });
   app.put<{ Body: UpdateSettingsRequest }>(apiRoutes.settings, async (request, reply) => {
