@@ -853,6 +853,16 @@ describe("dashboard security and operations", () => {
     expect(screen.getByText("/repo · idle")).toBeInTheDocument();
   });
 
+  it("updates the displayed model from a runtime event without reloading the thread", async () => {
+    await openThread();
+    const socket = WebSocketStub.instances.at(-1)!;
+    expect(screen.getByText("/repo · idle")).toBeInTheDocument();
+    socket.emit({ type: "thread.model.updated", threadId: "t", model: "gpt-5.6-sol" });
+    expect(await screen.findByText(/模型：gpt-5\.6-sol/)).toBeInTheDocument();
+    socket.emit({ type: "thread.model.updated", threadId: "t", model: "gpt-5.6-terra" });
+    expect(await screen.findByText(/模型：gpt-5\.6-terra/)).toBeInTheDocument();
+  });
+
   it("highlights an unread background thread and sends a notification from an HTTPS origin when it completes", async () => {
     class NotificationStub {
       static permission: NotificationPermission = "granted";

@@ -920,6 +920,12 @@ export default function App() {
       if (event.thread.status === "waiting")
         notifyUnreadThread(event.thread.id, "Codex 需要你操作", event.thread.title);
     }
+    if (event.type === "thread.model.updated") {
+      setThreads((old) =>
+        old.map((thread) => (thread.id === event.threadId ? { ...thread, model: event.model } : thread)),
+      );
+      setSelected((old) => (old?.id === event.threadId ? { ...old, model: event.model } : old));
+    }
     if (event.type === "thread.deleted") {
       setThreads((old) => old.filter((t) => t.id !== event.threadId));
       setSelected((old) => (old?.id === event.threadId ? undefined : old));

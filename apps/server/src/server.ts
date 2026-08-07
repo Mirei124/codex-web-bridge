@@ -84,7 +84,6 @@ function summary(thread: ThreadRecord): ThreadSummary {
     cwd: thread.workingDirectory,
     proxy: thread.proxy,
     prependPath: thread.prependPath,
-    model: thread.model,
     status: thread.status as ThreadSummary["status"],
     updatedAt: new Date(thread.updatedAt).toISOString(),
   };
@@ -115,6 +114,7 @@ export async function buildServer(
   const settingsSaver = options.settingsSaver ?? ((next: AppConfig) => saveConfig(next));
   const hostKeyVerifier = options.hostKeyVerifier ?? verifyHostKey;
   const takeover = new Map<string, { owner: string; expiresAt?: number }>();
+  const publishedModels = new Map<string, string>();
   function activeLease(threadId: string) {
     const lease = takeover.get(threadId);
     if (lease?.expiresAt !== undefined && lease.expiresAt <= Date.now()) {
@@ -434,12 +434,14 @@ export async function buildServer(
       const codexThreadId = typeof created === "string" ? created : created.id;
       storage.updateThread(id, {
         codexThreadId,
-        model: typeof created === "string" ? undefined : created.model,
         status: "idle",
         updatedAt: Date.now(),
       });
       publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
-      return reply.code(201).send(detail(storage, storage.thread(id)!));
+      return reply.code(201).send({
+        ...detail(storage, storage.thread(id)!),
+        model: typeof created === "string" ? undefined : created.model,
+      });
     } catch (error) {
       storage.updateThread(id, { status: "error", updatedAt: Date.now() });
       publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
@@ -478,9 +480,9 @@ export async function buildServer(
       storage.createThread(thread);
       try {
         const resumed = await runtime.resume(host, thread, request.body.codexThreadId);
-        storage.updateThread(id, { model: resumed?.model, status: "idle", updatedAt: Date.now() });
+        storage.updateThread(id, { status: "idle", updatedAt: Date.now() });
         publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
-        return reply.code(201).send(detail(storage, storage.thread(id)!));
+        return reply.code(201).send({ ...detail(storage, storage.thread(id)!), model: resumed?.model });
       } catch (error) {
         storage.updateThread(id, { status: "error", updatedAt: Date.now() });
         publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
@@ -747,6 +749,11 @@ export async function buildServer(
       method = rpc.method,
       params = rpc.params ?? {},
       now = Date.now();
+    const reportedModel = runtimeEventModel(method, params);
+    if (reportedModel && publishedModels.get(event.threadId) !== reportedModel) {
+      publishedModels.set(event.threadId, reportedModel);
+      publish({ type: "thread.model.updated", threadId: event.threadId, model: reportedModel });
+    }
     if (method === "item/agentMessage/delta") {
       const messageId = String(params.itemId),
         exists = storage.messages(event.threadId).some((message) => message.id === messageId);
@@ -1008,6 +1015,16 @@ function validPrependPath(value: string): boolean {
   return (
     value.length <= 4096 && !/[\0\r\n]/.test(value) && value.split(":").every((directory) => directory.startsWith("/"))
   );
+}
+
+function runtimeEventModel(method: string, params: Record<string, any>): string | undefined {
+  const value =
+    method === "model/rerouted"
+      ? params.toModel
+      : method === "model/safetyBuffering/updated"
+        ? params.model
+        : (params.turn?.model ?? params.thread?.model ?? params.model);
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 function normalizedProxy(value: unknown): string | undefined | null {
   if (value === undefined || value === "") return undefined;

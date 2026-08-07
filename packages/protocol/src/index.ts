@@ -168,6 +168,7 @@ export interface ResolveRequest {
 export type ServerEvent =
   | { type: "snapshot"; thread: ThreadDetail }
   | { type: "thread.updated"; thread: ThreadSummary }
+  | { type: "thread.model.updated"; threadId: string; model: string }
   | { type: "thread.deleted"; threadId: string }
   | { type: "message.created"; threadId: string; message: ChatMessage }
   | { type: "message.delta"; threadId: string; messageId: string; delta: string }

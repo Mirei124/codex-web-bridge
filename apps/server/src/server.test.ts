@@ -325,7 +325,8 @@ it("wires authenticated thread operations to the runtime", async () => {
     identityFile: "/key",
     createdAt: 1,
   });
-  const runtime = new FakeRuntime();
+  const runtime = new FakeRuntime(),
+    emitted: any[] = [];
   app = await buildServer(
     {
       version: 1,
@@ -337,7 +338,7 @@ it("wires authenticated thread operations to the runtime", async () => {
       trustedProxy: "127.0.0.1",
     },
     storage,
-    { runtime, webRoot: false },
+    { runtime, webRoot: false, eventSink: (event) => emitted.push(event) },
   );
   const base = { "x-forwarded-proto": "https", origin: "https://bridge.example" };
   const login = await app.inject({
@@ -446,6 +447,19 @@ it("wires authenticated thread operations to the runtime", async () => {
     proxy: "http://proxy.example:8080",
     prependPath: "/thread/bin",
   });
+  runtime.events.emit("event", {
+    type: "codex",
+    threadId: id,
+    payload: { method: "model/rerouted", params: { fromModel: "gpt-old", toModel: "gpt-new" } },
+  });
+  runtime.events.emit("event", {
+    type: "codex",
+    threadId: id,
+    payload: { method: "model/rerouted", params: { fromModel: "gpt-old", toModel: "gpt-new" } },
+  });
+  expect(emitted.filter((event) => event.type === "thread.model.updated")).toEqual([
+    { type: "thread.model.updated", threadId: id, model: "gpt-new" },
+  ]);
   expect((await app.inject({ method: "DELETE", url: `/api/threads/${id}`, headers })).statusCode).toBe(204);
   expect(storage.thread(id)).toBeUndefined();
   expect(runtime.calls).toEqual(
