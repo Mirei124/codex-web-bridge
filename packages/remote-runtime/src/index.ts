@@ -489,7 +489,7 @@ export class TmuxCodexRuntime {
 
 export function parsePaneDimensions(stdout: string): { cols: number; rows: number } | undefined {
   for (const line of stdout.trim().split(/\r?\n/).reverse()) {
-    const match = line.trim().match(/^(\d+)\s+(\d+)$/);
+    const match = line.trim().match(/^(\d+)(?:\s+|_)(\d+)$/);
     if (!match) continue;
     const cols = Number(match[1]),
       rows = Number(match[2]);
