@@ -601,6 +601,10 @@ export async function buildServer(
     await runtime.resolve(thread, JSON.parse(pending.rpcId) as string | number, response);
     storage.resolvePending(request.params.requestId, thread.id);
     publish({ type: "request.resolved", threadId: thread.id, requestId: request.params.requestId });
+    if (storage.pending(thread.id).length === 0 && storage.thread(thread.id)?.status === "waiting") {
+      storage.updateThread(thread.id, { status: "running", updatedAt: Date.now() });
+      publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
+    }
     return reply.code(204).send();
   });
   app.post<{ Params: { id: string }; Body: { enabled: boolean; ttlMs?: number } }>(

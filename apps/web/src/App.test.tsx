@@ -526,6 +526,11 @@ describe("dashboard security and operations", () => {
     expect(screen.getByText("需要你处理权限或输入请求")).toBeInTheDocument();
     WebSocketStub.instances.at(-1)?.emit({ type: "request.resolved", threadId: "t", requestId: "approve-1" });
     await waitFor(() => expect(screen.queryByText("需要你处理权限或输入请求")).not.toBeInTheDocument());
+    WebSocketStub.instances.at(-1)?.emit({
+      type: "thread.updated",
+      thread: { ...thread, status: "running", pendingRequests: undefined },
+    });
+    expect(await screen.findByText(/\/repo · running/)).toBeInTheDocument();
   });
 
   it("sends session scope for allow all approvals", async () => {

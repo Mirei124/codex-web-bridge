@@ -707,6 +707,7 @@ it("maps session-scoped approval responses to Codex RPC results", async () => {
       })
     ).statusCode,
   ).toBe(204);
+  expect(storage.thread("thread")?.status).toBe("waiting");
   expect(
     (
       await app.inject({
@@ -717,6 +718,7 @@ it("maps session-scoped approval responses to Codex RPC results", async () => {
       })
     ).statusCode,
   ).toBe(204);
+  expect(storage.thread("thread")?.status).toBe("running");
   expect(runtime.resolutions).toEqual([
     {
       requestId: "rpc-permissions",
