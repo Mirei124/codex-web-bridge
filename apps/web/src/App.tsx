@@ -169,6 +169,7 @@ function CreateDialog({
   const [discovered, setDiscovered] = useState<CodexThreadSummary[]>([]);
   const [defaults, setDefaults] = useState<ThreadCreateDefaults>({ hosts: [], cwdHistory: [] });
   const [loadingDefaults, setLoadingDefaults] = useState(mode === "create");
+  const [submitting, setSubmitting] = useState(false);
   function applyHostDefaults(nextHostId: string, source = defaults) {
     const remembered = source.hosts.find((item) => item.hostId === nextHostId);
     setCwd(remembered?.cwd ?? "");
@@ -234,6 +235,7 @@ function CreateDialog({
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (submitting) return;
     setError("");
     const proxyValue = proxy.trim(),
       prependPathValue = prependPath.trim(),
@@ -243,13 +245,26 @@ function CreateDialog({
         ...(proxyValue ? { proxy: proxyValue } : {}),
         ...(prependPathValue ? { prependPath: prependPathValue } : {}),
       };
+    setSubmitting(true);
     try {
       if (mode === "create") {
         await api.saveThreadCreateDefaults(values);
-        onDone(await api.createThread(values));
+        try {
+          onDone(await api.createThread(values));
+        } catch (e) {
+          if (
+            e instanceof ApiError &&
+            e.code === "WORKING_DIRECTORY_NOT_FOUND" &&
+            confirm(`工作目录“${values.cwd}”不存在，是否创建该目录？`)
+          ) {
+            onDone(await api.createThread({ ...values, createDirectory: true }));
+          } else throw e;
+        }
       } else onDone(await api.resumeThread({ ...values, codexThreadId: threadId }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "操作失败");
+    } finally {
+      setSubmitting(false);
     }
   }
   return (
@@ -349,11 +364,23 @@ function CreateDialog({
         </label>
         {error && <div className="error">{error}</div>}
         <div className="actions">
-          <button type="button" className="secondary" onClick={onClose}>
+          <button type="button" className="secondary" disabled={submitting} onClick={onClose}>
             取消
           </button>
-          <button disabled={loadingDefaults || !hostId || !cwd.trim() || (mode === "resume" && !threadId.trim())}>
-            {loadingDefaults ? "读取中…" : mode === "create" ? "创建" : "恢复"}
+          <button
+            disabled={
+              loadingDefaults || submitting || !hostId || !cwd.trim() || (mode === "resume" && !threadId.trim())
+            }
+          >
+            {loadingDefaults
+              ? "读取中…"
+              : submitting
+                ? mode === "create"
+                  ? "创建中…"
+                  : "恢复中…"
+                : mode === "create"
+                  ? "创建"
+                  : "恢复"}
           </button>
         </div>
       </form>
@@ -1139,6 +1166,7 @@ export default function App() {
                 <h1>{selected.title}</h1>
                 <p>
                   {selected.cwd} · {selected.status}
+                  {selected.model ? ` · 模型：${selected.model}` : ""}
                 </p>
               </div>
               <div className="actions">

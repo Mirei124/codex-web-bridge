@@ -43,6 +43,7 @@ export interface ThreadSummary {
   cwd: string;
   proxy?: string;
   prependPath?: string;
+  model?: string;
   status: ThreadStatus;
   updatedAt: string;
 }
@@ -133,8 +134,9 @@ export interface CreateThreadRequest {
   cwd: string;
   proxy?: string;
   prependPath?: string;
+  createDirectory?: boolean;
 }
-export interface ThreadCreateHostDefaults extends CreateThreadRequest {
+export interface ThreadCreateHostDefaults extends Omit<CreateThreadRequest, "createDirectory"> {
   updatedAt: string;
 }
 export interface ThreadCreateDefaults {
@@ -142,7 +144,7 @@ export interface ThreadCreateDefaults {
   hosts: ThreadCreateHostDefaults[];
   cwdHistory: string[];
 }
-export type SaveThreadCreateDefaultsRequest = CreateThreadRequest;
+export type SaveThreadCreateDefaultsRequest = Omit<CreateThreadRequest, "createDirectory">;
 export interface DeleteThreadCreateCwdRequest {
   cwd: string;
 }

@@ -21,8 +21,9 @@ export interface RuntimeEvent {
 }
 export interface RuntimeManager {
   events: EventEmitter;
-  create(host: HostRecord, thread: ThreadRecord): Promise<string>;
-  resume(host: HostRecord, thread: ThreadRecord, codexThreadId: string): Promise<void>;
+  ensureWorkingDirectory?(host: HostRecord, cwd: string, create: boolean): Promise<boolean>;
+  create(host: HostRecord, thread: ThreadRecord): Promise<string | { id: string; model?: string }>;
+  resume(host: HostRecord, thread: ThreadRecord, codexThreadId: string): Promise<void | { model?: string }>;
   reconnect(host: HostRecord, thread: ThreadRecord): Promise<void>;
   detach?(threadId: string): Promise<void>;
   exit(thread: ThreadRecord, host?: HostRecord): Promise<void>;
@@ -84,6 +85,20 @@ export class HostRuntimeManager implements RuntimeManager {
     if ([...this.active.values()].some((active) => active.hostId === hostId)) return "online";
     return this.connecting.has(hostId) ? "connecting" : "offline";
   }
+  async ensureWorkingDirectory(host: HostRecord, cwd: string, create: boolean): Promise<boolean> {
+    const ssh = await this.createSsh(host);
+    try {
+      await ssh.connect();
+      const exists = (await ssh.execute("test", ["-d", cwd])).code === 0;
+      if (!exists && create) {
+        const result = await ssh.execute("mkdir", ["-p", "--", cwd]);
+        if (result.code !== 0) throw new Error(result.stderr.trim() || `unable to create working directory: ${cwd}`);
+      }
+      return exists;
+    } finally {
+      ssh.close();
+    }
+  }
   async listHistorical(host: HostRecord) {
     const active = [...this.active.values()].find((value) => value.hostId === host.id);
     if (active) return this.historicalFrom(active.client);
@@ -113,7 +128,7 @@ export class HostRuntimeManager implements RuntimeManager {
     }
     throw lastError instanceof Error ? lastError : new Error("unable to start Codex history probe");
   }
-  async create(host: HostRecord, thread: ThreadRecord): Promise<string> {
+  async create(host: HostRecord, thread: ThreadRecord): Promise<{ id: string; model?: string }> {
     this.detached.delete(thread.id);
     console.error("[cwb:runtime] create-started", {
       hostId: host.id,
@@ -125,17 +140,17 @@ export class HostRuntimeManager implements RuntimeManager {
       const created = await active.client.createThread({ cwd: thread.workingDirectory });
       active.hasRollout = false;
       await this.activate(host, { ...thread, codexThreadId: created.id }, active, false);
-      return created.id;
+      return { id: created.id, model: typeof created.model === "string" ? created.model : undefined };
     } catch (error) {
       await this.dispose(active, { stopTmux: active.tmuxCreated && !this.detached.has(thread.id) });
       throw error;
     }
   }
-  async resume(host: HostRecord, thread: ThreadRecord, codexThreadId: string): Promise<void> {
+  async resume(host: HostRecord, thread: ThreadRecord, codexThreadId: string): Promise<{ model?: string }> {
     this.detached.delete(thread.id);
     const active = await this.open(host, thread);
     try {
-      await active.client.resumeThread(codexThreadId, { cwd: thread.workingDirectory });
+      const resumed = await active.client.resumeThread(codexThreadId, { cwd: thread.workingDirectory });
       if (active.hasRollout)
         active.session = await active.runtime.attachViewer(
           active.session,
@@ -144,6 +159,7 @@ export class HostRuntimeManager implements RuntimeManager {
           thread.proxy,
         );
       await this.activate(host, thread, active, active.hasRollout);
+      return { model: typeof resumed.model === "string" ? resumed.model : undefined };
     } catch (error) {
       await this.dispose(active, { stopTmux: active.tmuxCreated && !this.detached.has(thread.id) });
       throw error;

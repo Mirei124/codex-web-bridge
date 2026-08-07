@@ -175,8 +175,9 @@ describe("runtime lifecycle reliability", () => {
         runtimeFactory: () => runtime as unknown as TmuxCodexRuntime,
         clientFactory: () => client as unknown as CodexClient,
       });
-    const codexId = await manager.create(host, thread);
-    expect(codexId).toBe("codex-1");
+    const created = await manager.create(host, thread),
+      codexId = created.id;
+    expect(created).toEqual({ id: "codex-1", model: undefined });
     expect(runtime.calls).toEqual([]);
     await manager.send({ ...thread, codexThreadId: codexId }, "hello");
     expect(client.calls).toEqual(["startTurn"]);
@@ -193,7 +194,7 @@ describe("runtime lifecycle reliability", () => {
         runtimeFactory: () => runtime as unknown as TmuxCodexRuntime,
         clientFactory: () => client as unknown as CodexClient,
       });
-    const codexThreadId = await manager.create(host, thread),
+    const codexThreadId = (await manager.create(host, thread)).id,
       activeThread = { ...thread, codexThreadId };
     await expect(manager.screenshot(activeThread)).resolves.toBeUndefined();
     await expect(manager.terminalSeed(activeThread)).resolves.toBe("");
@@ -346,7 +347,7 @@ describe("runtime lifecycle reliability", () => {
         return value as unknown as CodexClient;
       },
     });
-    const codexId = await manager.create(host, thread);
+    const codexId = (await manager.create(host, thread)).id;
     await manager.send({ ...thread, codexThreadId: codexId }, "hello");
     runtimes[0]!.stream.emit("close");
     await vi.waitFor(() => expect(runtimes.length).toBeGreaterThan(1), { timeout: 500 });

@@ -193,6 +193,39 @@ describe("dashboard security and operations", () => {
     });
   });
 
+  it("disables creation while pending and confirms creation of a missing working directory", async () => {
+    const baseFetch = authenticatedFetch();
+    let releaseRetry!: () => void;
+    const retryGate = new Promise<void>((resolve) => (releaseRetry = resolve));
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const path = typeof input === "string" ? input : input.toString();
+      if (path === "/api/threads" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        if (!body.createDirectory)
+          return response({ error: "working directory does not exist", code: "WORKING_DIRECTORY_NOT_FOUND" }, 409);
+        await retryGate;
+        return response({ ...thread, id: "created", title: "Created", model: "gpt-5.4" });
+      }
+      return baseFetch(input, init);
+    });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.stubGlobal("fetch", fetch);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /新会话/ }));
+    await screen.findByRole("button", { name: "创建" });
+    fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "/missing/project" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+    const pending = await screen.findByRole("button", { name: "创建中…" });
+    expect(pending).toBeDisabled();
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("/missing/project"));
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/threads",
+      expect.objectContaining({ body: expect.stringContaining('"createDirectory":true') }),
+    );
+    releaseRetry();
+    expect(await screen.findByText(/模型：gpt-5\.4/)).toBeInTheDocument();
+  });
+
   it("loads and saves backend defaults for the create-thread form", async () => {
     const baseFetch = authenticatedFetch();
     const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) => {

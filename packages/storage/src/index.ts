@@ -45,6 +45,7 @@ export interface ThreadRecord {
   workingDirectory: string;
   proxy?: string;
   prependPath?: string;
+  model?: string;
   title: string;
   status: string;
   hasRollout?: number;
@@ -155,6 +156,8 @@ export class Storage {
         "UPDATE threads SET has_rollout=1 WHERE title LIKE 'Resume %' OR EXISTS (SELECT 1 FROM messages WHERE messages.thread_id=threads.id)",
       );
     }
+    if (!threadColumns.some((column) => column.name === "model"))
+      this.db.exec("ALTER TABLE threads ADD COLUMN model TEXT");
     const pendingColumns = this.db.prepare("PRAGMA table_info(pending_requests)").all() as Array<{ name: string }>;
     if (!pendingColumns.some((column) => column.name === "rpc_id"))
       this.db.exec("ALTER TABLE pending_requests ADD COLUMN rpc_id TEXT NOT NULL DEFAULT 'null'");
@@ -230,21 +233,21 @@ export class Storage {
   threads(): ThreadRecord[] {
     return this.db
       .prepare(
-        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,status,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads ORDER BY updated_at DESC",
+        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,model,title,status,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads ORDER BY updated_at DESC",
       )
       .all() as ThreadRecord[];
   }
   thread(id: string): ThreadRecord | undefined {
     return this.db
       .prepare(
-        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,status,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads WHERE id=?",
+        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,model,title,status,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads WHERE id=?",
       )
       .get(id) as ThreadRecord | undefined;
   }
   createThread(thread: ThreadRecord): void {
     this.db
       .prepare(
-        "INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,prepend_path,title,status,has_rollout,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,prepend_path,model,title,status,has_rollout,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         thread.id,
@@ -255,6 +258,7 @@ export class Storage {
         thread.workingDirectory,
         thread.proxy ?? null,
         thread.prependPath ?? null,
+        thread.model ?? null,
         thread.title,
         thread.status,
         thread.hasRollout ?? 0,
@@ -264,15 +268,23 @@ export class Storage {
   }
   updateThread(
     id: string,
-    update: { codexThreadId?: string; remotePort?: number; status?: string; hasRollout?: number; updatedAt: number },
+    update: {
+      codexThreadId?: string;
+      remotePort?: number;
+      model?: string;
+      status?: string;
+      hasRollout?: number;
+      updatedAt: number;
+    },
   ): void {
     this.db
       .prepare(
-        "UPDATE threads SET codex_thread_id=COALESCE(?,codex_thread_id),remote_port=COALESCE(?,remote_port),status=COALESCE(?,status),has_rollout=COALESCE(?,has_rollout),updated_at=? WHERE id=?",
+        "UPDATE threads SET codex_thread_id=COALESCE(?,codex_thread_id),remote_port=COALESCE(?,remote_port),model=COALESCE(?,model),status=COALESCE(?,status),has_rollout=COALESCE(?,has_rollout),updated_at=? WHERE id=?",
       )
       .run(
         update.codexThreadId ?? null,
         update.remotePort ?? null,
+        update.model ?? null,
         update.status ?? null,
         update.hasRollout ?? null,
         update.updatedAt,

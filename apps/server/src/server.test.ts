@@ -207,6 +207,12 @@ class FakeRuntime implements RuntimeManager {
   calls: string[] = [];
   resolutions: Array<{ requestId: string | number; value: unknown }> = [];
   failExit = false;
+  directoryExists = true;
+  directoryChecks: Array<{ cwd: string; create: boolean }> = [];
+  async ensureWorkingDirectory(_host: unknown, cwd: string, create: boolean) {
+    this.directoryChecks.push({ cwd, create });
+    return this.directoryExists || create;
+  }
   async create() {
     this.calls.push("create");
     return "codex-1";
@@ -373,11 +379,27 @@ it("wires authenticated thread operations to the runtime", async () => {
     payload: { hostId: "host", cwd: "/work", prependPath: "relative/bin" },
   });
   expect(invalidPath.statusCode).toBe(400);
+  runtime.directoryExists = false;
+  const missingDirectory = await app.inject({
+    method: "POST",
+    url: "/api/threads",
+    headers,
+    payload: { hostId: "host", cwd: "/missing" },
+  });
+  expect(missingDirectory.statusCode).toBe(409);
+  expect(missingDirectory.json()).toMatchObject({ code: "WORKING_DIRECTORY_NOT_FOUND" });
+  expect(storage.threads()).toHaveLength(0);
   const created = await app.inject({
     method: "POST",
     url: "/api/threads",
     headers,
-    payload: { hostId: "host", cwd: "/work", proxy: "http://proxy.example:8080", prependPath: "/thread/bin" },
+    payload: {
+      hostId: "host",
+      cwd: "/work",
+      proxy: "http://proxy.example:8080",
+      prependPath: "/thread/bin",
+      createDirectory: true,
+    },
   });
   expect(created.statusCode).toBe(201);
   const id = created.json().id;
@@ -387,6 +409,7 @@ it("wires authenticated thread operations to the runtime", async () => {
     prependPath: "/thread/bin",
   });
   expect(storage.thread(id)).toMatchObject({ proxy: "http://proxy.example:8080", prependPath: "/thread/bin" });
+  expect(runtime.directoryChecks).toContainEqual({ cwd: "/work", create: true });
   const sent = await app.inject({
     method: "POST",
     url: `/api/threads/${id}/messages`,
