@@ -6,13 +6,14 @@ import type {
   PendingRequest,
   ResolveRequest,
   ServerEvent,
+  TerminalSnapshotResponse,
   ThreadDetail,
   ThreadCreateDefaults,
   ThreadSummary,
   UpdateSettingsRequest,
 } from "@cwb/protocol";
 import { ApiError, api } from "./api";
-import { Terminal } from "./Terminal";
+import { Terminal, TerminalSnapshot } from "./Terminal";
 import { useThreadEvents } from "./useThreadEvents";
 
 const baseTitle = "Codex Bridge";
@@ -744,7 +745,8 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [tab, setTab] = useState<"chat" | "terminal">("chat");
   const [terminalData, setTerminalData] = useState<string[]>([]);
-  const [screenshot, setScreenshot] = useState<string>();
+  const [screenshot, setScreenshot] = useState<TerminalSnapshotResponse>();
+  const [screenshotLoading, setScreenshotLoading] = useState(false);
   const [hostDialog, setHostDialog] = useState<HostSummary | "new">();
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [exiting, setExiting] = useState(false);
@@ -985,6 +987,7 @@ export default function App() {
     });
     setTerminalData([]);
     setScreenshot(undefined);
+    setScreenshotLoading(false);
     setOperationError("");
     setSelected(await api.thread(thread.id));
     if (!options.preserveHash) window.history.replaceState(null, "", `#${encodeURIComponent(thread.id)}`);
@@ -1065,6 +1068,18 @@ export default function App() {
     },
     [selected],
   );
+  async function captureScreenshot() {
+    if (!selected || screenshotLoading) return;
+    setScreenshotLoading(true);
+    setOperationError("");
+    try {
+      setScreenshot(await api.terminalSnapshot(selected.id));
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : "获取终端快照失败");
+    } finally {
+      setScreenshotLoading(false);
+    }
+  }
   if (authenticated === undefined) return <main className="center">正在建立安全会话…</main>;
   if (!authenticated)
     return (
@@ -1259,8 +1274,8 @@ export default function App() {
                       : "只读"}
                   </span>
                   <div className="actions">
-                    <button className="secondary" onClick={() => setScreenshot(api.screenshotUrl(selected.id))}>
-                      截图
+                    <button className="secondary" disabled={screenshotLoading} onClick={() => void captureScreenshot()}>
+                      {screenshotLoading ? "生成中…" : "截图"}
                     </button>
                     <button
                       disabled={selected.status === "exited" || !selected.terminal.connected}
@@ -1275,7 +1290,7 @@ export default function App() {
                 {screenshot && (
                   <div className="screenshot">
                     <button onClick={() => setScreenshot(undefined)}>关闭</button>
-                    <img src={screenshot} alt="终端截图" />
+                    <TerminalSnapshot ansi={screenshot.ansi} cols={screenshot.cols} rows={screenshot.rows} />
                   </div>
                 )}
               </div>

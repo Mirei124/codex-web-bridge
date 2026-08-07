@@ -40,7 +40,7 @@ const usage = `Usage:
   codex-web-bridge request resolve|answer THREAD_ID REQUEST_ID
     (--input-json JSON | --input-file PATH)
 
-  codex-web-bridge terminal screenshot THREAD_ID --output PNG_PATH
+  codex-web-bridge terminal screenshot THREAD_ID --output ANSI_PATH
   codex-web-bridge terminal watch THREAD_ID [--timeout MILLISECONDS]
   codex-web-bridge terminal takeover|release THREAD_ID
   codex-web-bridge terminal input THREAD_ID (--data TEXT | --data-file PATH)
@@ -135,12 +135,12 @@ Create or update a host using explicit fields or a JSON object.
   "request resolve":
     "Usage: codex-web-bridge request resolve THREAD_ID REQUEST_ID (--input-json JSON | --input-file PATH) [--json]\n\nResolve a pending request with a structured response.",
   terminal: `Usage:
-  codex-web-bridge terminal screenshot THREAD_ID --output PNG_PATH
+  codex-web-bridge terminal screenshot THREAD_ID --output ANSI_PATH
   codex-web-bridge terminal watch THREAD_ID [--timeout MILLISECONDS]
   codex-web-bridge terminal takeover|release THREAD_ID
   codex-web-bridge terminal input THREAD_ID (--data TEXT | --data-file PATH)`,
   "terminal screenshot":
-    "Usage: codex-web-bridge terminal screenshot THREAD_ID --output PNG_PATH [--json]\n\nRender the current terminal to a PNG file.",
+    "Usage: codex-web-bridge terminal screenshot THREAD_ID --output ANSI_PATH [--json]\n\nSave the current terminal ANSI snapshot.",
   "terminal watch":
     "Usage: codex-web-bridge terminal watch THREAD_ID [--timeout MILLISECONDS] [--json]\n\nStream raw terminal output. Status messages are written to stderr.",
   "terminal takeover":

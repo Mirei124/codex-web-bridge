@@ -49,8 +49,8 @@ describe("CLI human renderer", () => {
     );
     expect(renderHuman({}, { method: "host.delete", params: { hostId: "machine-a" } })).toBe("Host machine-a deleted.");
     expect(
-      renderHuman({ path: "/tmp/pane.png" }, { method: "terminal.screenshot", params: { threadId: "thread-1" } }),
-    ).toBe("Screenshot saved to /tmp/pane.png.");
+      renderHuman({ path: "/tmp/pane.ansi" }, { method: "terminal.screenshot", params: { threadId: "thread-1" } }),
+    ).toBe("Terminal ANSI snapshot saved to /tmp/pane.ansi.");
   });
 
   it("renders streaming text without JSON decoration", () => {

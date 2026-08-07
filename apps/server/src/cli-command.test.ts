@@ -248,11 +248,11 @@ describe("LLM-oriented CLI command parsing", () => {
     });
   });
 
-  it("keeps screenshot bytes out of structured stdout", () => {
-    expect(parseBusinessCommand(["terminal", "screenshot", "thread-1", "--output", "/tmp/pane.png"])).toMatchObject({
+  it("keeps terminal snapshots out of structured stdout", () => {
+    expect(parseBusinessCommand(["terminal", "screenshot", "thread-1", "--output", "/tmp/pane.ansi"])).toMatchObject({
       method: "terminal.screenshot",
       params: { threadId: "thread-1" },
-      output: "/tmp/pane.png",
+      output: "/tmp/pane.ansi",
       stream: false,
     });
   });

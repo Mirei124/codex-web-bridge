@@ -247,8 +247,8 @@ class FakeRuntime implements RuntimeManager {
   async terminalInput() {
     this.calls.push("input");
   }
-  async screenshot() {
-    return Buffer.from([137, 80, 78, 71]);
+  async terminalSnapshot() {
+    return { ansi: "\u001b[31mred\u001b[0m", cols: 80, rows: 24 };
   }
   async close() {}
   async terminalSeed() {
@@ -434,10 +434,13 @@ it("wires authenticated thread operations to the runtime", async () => {
     (await app.inject({ method: "POST", url: `/api/threads/${id}/terminal/input`, headers, payload: { data: "x" } }))
       .statusCode,
   ).toBe(204);
-  expect(
-    (await app.inject({ method: "GET", url: `/api/threads/${id}/terminal/screenshot`, headers: { ...base, cookie } }))
-      .statusCode,
-  ).toBe(200);
+  const snapshot = await app.inject({
+    method: "GET",
+    url: `/api/threads/${id}/terminal/screenshot`,
+    headers: { ...base, cookie },
+  });
+  expect(snapshot.statusCode).toBe(200);
+  expect(snapshot.json()).toMatchObject({ ansi: "\u001b[31mred\u001b[0m", cols: 80, rows: 24 });
   expect((await app.inject({ method: "POST", url: `/api/threads/${id}/exit`, headers })).statusCode).toBe(204);
   const restored = await app.inject({ method: "POST", url: `/api/threads/${id}/resume`, headers });
   expect(restored.statusCode).toBe(200);

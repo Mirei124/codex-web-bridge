@@ -164,6 +164,11 @@ export interface ResolveRequest {
   scope?: "turn" | "session";
   answers?: Record<string, { answers: string[] }>;
 }
+export interface TerminalSnapshotResponse {
+  ansi: string;
+  cols: number;
+  rows: number;
+}
 
 export type ServerEvent =
   | { type: "snapshot"; thread: ThreadDetail }

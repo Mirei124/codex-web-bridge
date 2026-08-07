@@ -43,8 +43,8 @@ class FakeRuntime implements RuntimeManager {
   async terminalSeed() {
     return "";
   }
-  async screenshot() {
-    return Buffer.from([137, 80, 78, 71]);
+  async terminalSnapshot() {
+    return { ansi: "\u001b[31mred\u001b[0m", cols: 80, rows: 24 };
   }
   async close() {}
   async listHistorical() {

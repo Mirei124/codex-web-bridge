@@ -2,11 +2,6 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { createServer, type Server, type Socket } from "node:net";
 import { Client, type ConnectConfig, type ClientChannel } from "ssh2";
-export {
-  TerminalSnapshotRenderer,
-  type RenderedTerminalSnapshot,
-  type TerminalSnapshotOptions,
-} from "./terminal-snapshot.js";
 
 export interface CommandResult {
   stdout: string;

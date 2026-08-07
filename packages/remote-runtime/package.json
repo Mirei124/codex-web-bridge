@@ -14,8 +14,6 @@
     "dist"
   ],
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.65",
-    "@xterm/headless": "^6.0.0",
     "ssh2": "^1.16.0"
   },
   "devDependencies": {

@@ -25,7 +25,7 @@ await build({
   platform: "node",
   format: "esm",
   target: "node22",
-  external: ["@napi-rs/canvas", "@node-rs/argon2", "better-sqlite3", "cpu-features", "ssh2"],
+  external: ["@node-rs/argon2", "better-sqlite3", "cpu-features", "ssh2"],
 });
 const suffix = process.platform === "win32" ? ".exe" : "";
 const libc =

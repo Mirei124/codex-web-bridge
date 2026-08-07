@@ -14,6 +14,7 @@ import {
   type SaveThreadCreateDefaultsRequest,
   type ServerEvent,
   type SettingsResponse,
+  type TerminalSnapshotResponse,
   type ThreadDetail,
   type ThreadSummary,
   type UpdateSettingsRequest,
@@ -662,11 +663,14 @@ export async function buildServer(
     if (!host) return reply.code(404).send({ error: "host not found" });
     return runtime.listHistorical ? runtime.listHistorical(host) : [];
   });
-  app.get<{ Params: { id: string } }>(`${apiRoutes.threads}/:id/terminal/screenshot`, async (request, reply) => {
-    const image = await runtime.screenshot(withThread(request.params.id));
-    if (!image) return reply.code(501).send({ error: "screenshot unavailable" });
-    return reply.type("image/png").send(image);
-  });
+  app.get<{ Params: { id: string }; Reply: TerminalSnapshotResponse | { error: string } }>(
+    `${apiRoutes.threads}/:id/terminal/screenshot`,
+    async (request, reply) => {
+      const snapshot = await runtime.terminalSnapshot(withThread(request.params.id));
+      if (!snapshot) return reply.code(501).send({ error: "screenshot unavailable" });
+      return snapshot;
+    },
+  );
 
   const sockets = new Map<WebSocket, { sessionId: string; threads: Set<string> }>(),
     wss = new WebSocketServer({ noServer: true });

@@ -296,12 +296,11 @@ export class ControlServer {
       );
     }
     if (method === "terminal.screenshot") {
-      const result = await this.injectRaw(
+      return this.inject(
         state,
         "GET",
         `${apiRoutes.threads}/${encodeURIComponent(stringParam(params, "threadId"))}/terminal/screenshot`,
       );
-      return { mimeType: result.contentType, data: result.body.toString("base64") };
     }
     if (method === "terminal.takeover" || method === "terminal.release") {
       return this.inject(

@@ -7,12 +7,12 @@ import type { HostRecord, ThreadRecord } from "@cwb/storage";
 import {
   SshConnection,
   TmuxCodexRuntime,
-  TerminalSnapshotRenderer,
   withPrependedPath,
   type RemoteSession,
   type CommandStream,
 } from "@cwb/remote-runtime";
 import { CodexClient } from "@cwb/codex-client";
+import type { TerminalSnapshotResponse } from "@cwb/protocol";
 
 export interface RuntimeEvent {
   threadId: string;
@@ -33,7 +33,7 @@ export interface RuntimeManager {
   prepareTerminal(thread: ThreadRecord): Promise<void>;
   terminalInput(thread: ThreadRecord, data: string): Promise<void>;
   terminalSeed(thread: ThreadRecord): Promise<string>;
-  screenshot(thread: ThreadRecord): Promise<Buffer | undefined>;
+  terminalSnapshot(thread: ThreadRecord): Promise<TerminalSnapshotResponse | undefined>;
   hostStatus?(hostId: string): "online" | "connecting" | "offline";
   listHistorical?(host: HostRecord): Promise<Array<{ id: string; title?: string; cwd?: string; updatedAt?: string }>>;
   close(): Promise<void>;
@@ -246,7 +246,7 @@ export class HostRuntimeManager implements RuntimeManager {
     if (!active.hasRollout) return "";
     return active.runtime.capture(active.session, 1000);
   }
-  async screenshot(thread: ThreadRecord): Promise<Buffer | undefined> {
+  async terminalSnapshot(thread: ThreadRecord): Promise<TerminalSnapshotResponse | undefined> {
     const active = this.must(thread.id);
     if (!active.hasRollout) return;
     await this.prepareTerminal(thread);
@@ -254,7 +254,7 @@ export class HostRuntimeManager implements RuntimeManager {
       active.runtime.capture(active.session),
       active.runtime.dimensions(active.session),
     ]);
-    return (await new TerminalSnapshotRenderer().render(ansi, size)).png;
+    return { ansi, ...size };
   }
   async close(): Promise<void> {
     this.closing = true;

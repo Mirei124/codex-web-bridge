@@ -196,7 +196,7 @@ describe("runtime lifecycle reliability", () => {
       });
     const codexThreadId = (await manager.create(host, thread)).id,
       activeThread = { ...thread, codexThreadId };
-    await expect(manager.screenshot(activeThread)).resolves.toBeUndefined();
+    await expect(manager.terminalSnapshot(activeThread)).resolves.toBeUndefined();
     await expect(manager.terminalSeed(activeThread)).resolves.toBe("");
     await expect(manager.prepareTerminal(activeThread)).rejects.toThrow("first message");
     expect(runtime.calls).toEqual([]);

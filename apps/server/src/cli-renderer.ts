@@ -142,7 +142,7 @@ function operationResult(method: string | undefined, params: Row | undefined, da
   if (method === "terminal.takeover") return `Terminal takeover acquired for ${threadId}.`;
   if (method === "terminal.release") return `Terminal takeover released for ${threadId}.`;
   if (method === "terminal.input") return `Terminal input sent to ${threadId}.`;
-  if (method === "terminal.screenshot") return `Screenshot saved to ${scalar(data.path)}.`;
+  if (method === "terminal.screenshot") return `Terminal ANSI snapshot saved to ${scalar(data.path)}.`;
 }
 
 function daemonResult(method: string | undefined, data: Row): string | undefined {

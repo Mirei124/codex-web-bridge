@@ -88,6 +88,8 @@ function authenticatedFetch() {
     if (path === "/api/threads" && init?.method === "POST")
       return response({ ...thread, id: "created", title: "Created" });
     if (path === "/api/threads/resume") return response({ ...thread, id: "resumed", title: "Resumed" });
+    if (path.startsWith("/api/threads/t/terminal/screenshot"))
+      return response({ ansi: "\u001b[32msnapshot\u001b[0m", cols: 80, rows: 24 });
     return response(undefined, 204);
   });
 }
@@ -960,5 +962,13 @@ describe("dashboard security and operations", () => {
     socket.emit({ type: "terminal.data", threadId: "t", data: ansiSeed });
     await waitFor(() => expect(terminalWrites).toContain(ansiSeed));
     expect(terminalWrites).not.toContain(Buffer.from(ansiSeed).toString("base64"));
+  });
+
+  it("renders terminal screenshot snapshots from ANSI in the browser", async () => {
+    await openThread();
+    fireEvent.click(screen.getByRole("button", { name: "终端" }));
+    fireEvent.click(await screen.findByRole("button", { name: "截图" }));
+    expect(await screen.findByLabelText("终端 ANSI 快照")).toBeInTheDocument();
+    await waitFor(() => expect(terminalWrites).toContain("\u001b[32msnapshot\u001b[0m"));
   });
 });

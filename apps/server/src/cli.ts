@@ -468,6 +468,17 @@ async function runBusiness(args: string[]): Promise<void> {
     result = await request();
   }
   if (command.output) {
+    if (command.method === "terminal.screenshot") {
+      const ansi = (result as { ansi?: unknown } | undefined)?.ansi;
+      if (typeof ansi !== "string")
+        throw new ControlRequestError({
+          code: "protocol_error",
+          message: "screenshot response did not contain ANSI snapshot data",
+        });
+      await writeFile(command.output, ansi, { mode: 0o600 });
+      success({ path: command.output }, command.json, "result", command.method, command.params);
+      return;
+    }
     const encoded =
       typeof result === "string"
         ? result

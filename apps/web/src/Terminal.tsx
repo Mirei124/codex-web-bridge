@@ -8,6 +8,11 @@ interface Props {
   writable: boolean;
   onInput(data: string): void;
 }
+interface SnapshotProps {
+  ansi: string;
+  cols: number;
+  rows: number;
+}
 
 export function Terminal({ data, writable, onInput }: Props) {
   const element = useRef<HTMLDivElement>(null);
@@ -44,4 +49,23 @@ export function Terminal({ data, writable, onInput }: Props) {
     for (; written.current < data.length; written.current++) terminal.current?.write(data[written.current]);
   }, [data]);
   return <div className="terminal" aria-label="Codex terminal" ref={element} />;
+}
+
+export function TerminalSnapshot({ ansi, cols, rows }: SnapshotProps) {
+  const element = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!element.current) return;
+    const xterm = new XTerm({
+      cols,
+      rows,
+      cursorBlink: false,
+      disableStdin: true,
+      fontSize: 13,
+      theme: { background: "#101411" },
+    });
+    xterm.open(element.current);
+    xterm.write(ansi);
+    return () => xterm.dispose();
+  }, [ansi, cols, rows]);
+  return <div className="terminal-snapshot" aria-label="终端 ANSI 快照" ref={element} />;
 }

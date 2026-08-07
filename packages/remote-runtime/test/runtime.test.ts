@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   commandLine,
   shellQuote,
-  TerminalSnapshotRenderer,
   TmuxCodexRuntime,
   parsePaneDimensions,
   withPrependedPath,
@@ -179,13 +178,6 @@ describe("remote command safety", () => {
         { timeoutMs: 1, intervalMs: 1 },
       ),
     ).rejects.toThrow(/exec: node: not found/);
-  });
-  it("renders a bounded PNG from a fresh ANSI snapshot", async () => {
-    const result = await new TerminalSnapshotRenderer().render("\u001b[31mhello", { cols: 9999, rows: 1 });
-    expect(result.cols).toBe(240);
-    expect(result.rows).toBe(5);
-    expect(result.text).toContain("hello");
-    expect(result.png.subarray(1, 4).toString()).toBe("PNG");
   });
   it("keeps one FIFO reader and captures a seed when reconnecting", async () => {
     const remote = new FakeRemote();

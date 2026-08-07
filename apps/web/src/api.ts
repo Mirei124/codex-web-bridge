@@ -14,6 +14,7 @@ import type {
   ThreadCreateDefaults,
   ThreadDetail,
   ThreadSummary,
+  TerminalSnapshotResponse,
   UpdateSettingsRequest,
 } from "@cwb/protocol";
 import { apiRoutes } from "@cwb/protocol";
@@ -118,7 +119,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ data }),
     }),
-  screenshotUrl: (id: string) => `${apiRoutes.threads}/${encodeURIComponent(id)}/terminal/screenshot?t=${Date.now()}`,
+  terminalSnapshot: (id: string) =>
+    request<TerminalSnapshotResponse>(
+      `${apiRoutes.threads}/${encodeURIComponent(id)}/terminal/screenshot?t=${Date.now()}`,
+    ),
   settings: () => request<SettingsResponse>(apiRoutes.settings),
   updateSettings: (body: UpdateSettingsRequest) =>
     request<SettingsResponse>(apiRoutes.settings, { method: "PUT", body: JSON.stringify(body) }),

@@ -99,8 +99,6 @@ Important files:
 
 - [`packages/remote-runtime/src/index.ts`](../packages/remote-runtime/src/index.ts)
   SSH execution, tmux runtime, remote process startup
-- [`packages/remote-runtime/src/terminal-snapshot.ts`](../packages/remote-runtime/src/terminal-snapshot.ts)
-  screenshot rendering
 
 ### `packages/storage/src`
 
