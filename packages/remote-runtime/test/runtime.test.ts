@@ -5,6 +5,7 @@ import {
   shellQuote,
   TerminalSnapshotRenderer,
   TmuxCodexRuntime,
+  parsePaneDimensions,
   withPrependedPath,
   type CommandResult,
   type RemoteExecutor,
@@ -55,6 +56,11 @@ class FakeRemote implements RemoteExecutor {
   }
 }
 describe("remote command safety", () => {
+  it("parses pane dimensions despite SSH stdout noise", () => {
+    expect(parsePaneDimensions("welcome\n80\t11\n")).toEqual({ cols: 80, rows: 11 });
+    expect(parsePaneDimensions("80 11\r\n")).toEqual({ cols: 80, rows: 11 });
+    expect(parsePaneDimensions("welcome only\n")).toBeUndefined();
+  });
   it("quotes every argument at the SSH shell boundary", () => {
     expect(commandLine("printf", ["a'b", "$(bad)"])).toBe("'printf' 'a'\\''b' '$(bad)'");
     expect(shellQuote("")).toBe("''");

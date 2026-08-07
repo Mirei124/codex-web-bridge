@@ -373,7 +373,7 @@ export class TmuxCodexRuntime {
   }
   async dimensions(session: RemoteSession): Promise<{ cols: number; rows: number }> {
     if (!session.viewerPane) throw new Error("Viewer pane has not been attached");
-    const value = (
+    const stdout = (
       await this.must(this.resolvedTmux ?? this.tmux, [
         "display-message",
         "-p",
@@ -381,13 +381,11 @@ export class TmuxCodexRuntime {
         session.viewerPane,
         "#{pane_width}\t#{pane_height}",
       ])
-    ).stdout
-      .trim()
-      .split("\t");
-    const cols = Number(value[0]),
-      rows = Number(value[1]);
-    if (!Number.isInteger(cols) || !Number.isInteger(rows)) throw new Error("tmux returned invalid pane dimensions");
-    return { cols, rows };
+    ).stdout;
+    const dimensions = parsePaneDimensions(stdout);
+    if (!dimensions)
+      throw new Error(`tmux returned invalid pane dimensions: stdout=${JSON.stringify(stdout.slice(-500))}`);
+    return dimensions;
   }
   async terminalStream(session: RemoteSession): Promise<CommandStream> {
     if (!session.viewerPane) throw new Error("Viewer pane has not been attached");
@@ -486,6 +484,16 @@ export class TmuxCodexRuntime {
   }
   private describeAppServerFailure(message: string, output: string | undefined): string {
     return output ? `${message}. Last app-server output:\n${output}` : message;
+  }
+}
+
+export function parsePaneDimensions(stdout: string): { cols: number; rows: number } | undefined {
+  for (const line of stdout.trim().split(/\r?\n/).reverse()) {
+    const match = line.trim().match(/^(\d+)\s+(\d+)$/);
+    if (!match) continue;
+    const cols = Number(match[1]),
+      rows = Number(match[2]);
+    if (Number.isSafeInteger(cols) && cols > 0 && Number.isSafeInteger(rows) && rows > 0) return { cols, rows };
   }
 }
 function validateName(name: string): void {
