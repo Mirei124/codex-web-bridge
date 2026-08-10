@@ -104,6 +104,102 @@ function detail(storage: Storage, thread: ThreadRecord): ThreadDetail {
   };
 }
 
+function optionList(schema: any): Array<{ label: string; value: string; description?: string }> | undefined {
+  if (Array.isArray(schema?.oneOf))
+    return schema.oneOf.map((option: any) => ({
+      label: String(option.title ?? option.const),
+      value: String(option.const),
+    }));
+  if (Array.isArray(schema?.enum))
+    return schema.enum.map((value: any, index: number) => ({
+      label: String(schema.enumNames?.[index] ?? value),
+      value: String(value),
+    }));
+  if (Array.isArray(schema?.items?.anyOf))
+    return schema.items.anyOf.map((option: any) => ({
+      label: String(option.title ?? option.const),
+      value: String(option.const),
+    }));
+  if (Array.isArray(schema?.items?.enum))
+    return schema.items.enum.map((value: any) => ({ label: String(value), value: String(value) }));
+  if (schema?.type === "boolean")
+    return [
+      { label: "是", value: "true" },
+      { label: "否", value: "false" },
+    ];
+}
+
+function mcpElicitationRequest(requestId: string, params: any): PendingRequest {
+  const title = `MCP authorization: ${String(params.serverName ?? "server")}`;
+  if (params.mode === "url")
+    return {
+      kind: "approval",
+      requestId,
+      title,
+      detail: `${String(params.message ?? "Authorization required")}\n${String(params.url ?? "")}`,
+      command: params.url ? String(params.url) : undefined,
+    };
+  if (params.mode === "form" && params.requestedSchema?.properties)
+    return {
+      kind: "questions",
+      requestId,
+      title,
+      questions: Object.entries(params.requestedSchema.properties).map(([id, schema]: [string, any]) => ({
+        id,
+        header: String(schema?.title ?? id),
+        prompt: String(schema?.description ?? params.message ?? "Required by MCP server"),
+        options: optionList(schema),
+      })),
+    };
+  return {
+    kind: "input",
+    requestId,
+    title,
+    prompt: `${String(params.message ?? "MCP server requested input")}\nSubmit JSON content for this request.`,
+    placeholder: "{}",
+  };
+}
+
+function coerceMcpAnswer(value: string, schema: any): unknown {
+  if (schema?.type === "boolean") return value === "true" || value === "是";
+  if (schema?.type === "integer") return Number.parseInt(value, 10);
+  if (schema?.type === "number") return Number(value);
+  if (schema?.type === "array")
+    return value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  return value;
+}
+
+function mcpElicitationResponse(
+  params: any,
+  body: { value?: string; approved?: boolean; answers?: Record<string, { answers: string[] }> },
+) {
+  if (body.approved === false) return { action: "decline", content: null, _meta: null };
+  if (body.answers) {
+    const properties = params.requestedSchema?.properties ?? {};
+    return {
+      action: "accept",
+      content: Object.fromEntries(
+        Object.entries(body.answers).map(([id, answer]) => [
+          id,
+          coerceMcpAnswer(answer.answers[0] ?? "", properties[id]),
+        ]),
+      ),
+      _meta: null,
+    };
+  }
+  if (body.value?.trim()) {
+    try {
+      return { action: "accept", content: JSON.parse(body.value), _meta: null };
+    } catch {
+      return { action: "accept", content: body.value.trim(), _meta: null };
+    }
+  }
+  return { action: body.approved === true ? "accept" : "decline", content: null, _meta: null };
+}
+
 export async function buildServer(
   config: AppConfig,
   storage: Storage,
@@ -584,21 +680,25 @@ export async function buildServer(
       pending = storage.pendingById(request.params.requestId, thread.id);
     if (!pending) return reply.code(409).send({ error: "already resolved" });
     const approvalScope = request.body.scope === "session" ? "session" : "turn";
-    const response = request.body.answers
-      ? { answers: request.body.answers }
-      : pending.method === "item/permissions/requestApproval"
-        ? request.body.approved
-          ? { permissions: JSON.parse(pending.params).permissions ?? {}, scope: approvalScope }
-          : { permissions: {}, scope: "turn" }
-        : request.body.approved !== undefined
-          ? {
-              decision: request.body.approved
-                ? approvalScope === "session"
-                  ? "acceptForSession"
-                  : "accept"
-                : "decline",
-            }
-          : { answers: { value: { answers: [request.body.value ?? ""] } } };
+    const pendingParams = JSON.parse(pending.params);
+    const response =
+      pending.method === "mcpServer/elicitation/request"
+        ? mcpElicitationResponse(pendingParams, request.body)
+        : request.body.answers
+          ? { answers: request.body.answers }
+          : pending.method === "item/permissions/requestApproval"
+            ? request.body.approved
+              ? { permissions: pendingParams.permissions ?? {}, scope: approvalScope }
+              : { permissions: {}, scope: "turn" }
+            : request.body.approved !== undefined
+              ? {
+                  decision: request.body.approved
+                    ? approvalScope === "session"
+                      ? "acceptForSession"
+                      : "accept"
+                    : "decline",
+                }
+              : { answers: { value: { answers: [request.body.value ?? ""] } } };
     await runtime.resolve(thread, JSON.parse(pending.rpcId) as string | number, response);
     storage.resolvePending(request.params.requestId, thread.id);
     publish({ type: "request.resolved", threadId: thread.id, requestId: request.params.requestId });
@@ -859,7 +959,11 @@ export async function buildServer(
       "item/fileChange/requestApproval",
       "item/permissions/requestApproval",
     ]);
-    if (approvals.has(method) || method === "item/tool/requestUserInput") {
+    if (
+      approvals.has(method) ||
+      method === "item/tool/requestUserInput" ||
+      method === "mcpServer/elicitation/request"
+    ) {
       const requestId = randomUUID(),
         request: PendingRequest =
           method === "item/tool/requestUserInput"
@@ -878,18 +982,20 @@ export async function buildServer(
                   })),
                 })),
               }
-            : {
-                kind: "approval",
-                requestId,
-                title: "Approval required",
-                detail: String(
-                  params.reason ??
-                    (method === "item/fileChange/requestApproval"
-                      ? `File changes${params.grantRoot ? ` under ${params.grantRoot}` : ""}`
-                      : method),
-                ),
-                command: params.command ? String(params.command) : undefined,
-              };
+            : method === "mcpServer/elicitation/request"
+              ? mcpElicitationRequest(requestId, params)
+              : {
+                  kind: "approval",
+                  requestId,
+                  title: "Approval required",
+                  detail: String(
+                    params.reason ??
+                      (method === "item/fileChange/requestApproval"
+                        ? `File changes${params.grantRoot ? ` under ${params.grantRoot}` : ""}`
+                        : method),
+                  ),
+                  command: params.command ? String(params.command) : undefined,
+                };
       storage.putPending({
         id: requestId,
         threadId: event.threadId,

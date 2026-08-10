@@ -730,3 +730,172 @@ it("maps session-scoped approval responses to Codex RPC results", async () => {
     { requestId: "rpc-command", value: { decision: "acceptForSession" } },
   ]);
 });
+
+it("publishes MCP URL elicitations as pending approval requests", async () => {
+  storage = new Storage(":memory:");
+  storage.upsertHost({
+    id: "host",
+    name: "A",
+    hostname: "a",
+    port: 22,
+    username: "u",
+    hostKeySha256: "key",
+    identityFile: "/key",
+    createdAt: 1,
+  });
+  storage.createThread({
+    id: "thread",
+    hostId: "host",
+    codexThreadId: "codex",
+    tmuxSession: "cwb-thread",
+    remotePort: 45678,
+    workingDirectory: "/work",
+    title: "thread",
+    status: "running",
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  const runtime = new FakeRuntime();
+  const events: unknown[] = [];
+  app = await buildServer(
+    {
+      version: 1,
+      bindHost: "127.0.0.1",
+      port: 3210,
+      publicOrigin: "https://bridge.example",
+      passwordHash: await hashPassword("correct horse battery staple"),
+      sessionSecret: "x".repeat(32),
+      trustedProxy: "127.0.0.1",
+    },
+    storage,
+    { runtime, webRoot: false, eventSink: (event) => events.push(event) },
+  );
+  runtime.events.emit("event", {
+    threadId: "thread",
+    type: "codex",
+    payload: {
+      id: "rpc-mcp-url",
+      method: "mcpServer/elicitation/request",
+      params: {
+        threadId: "codex",
+        turnId: "turn",
+        serverName: "github",
+        mode: "url",
+        message: "Authorize GitHub MCP",
+        url: "https://github.com/login/oauth/authorize",
+        elicitationId: "elicit-1",
+        _meta: null,
+      },
+    },
+  });
+  const pending = storage.pending("thread");
+  expect(pending).toHaveLength(1);
+  expect(JSON.parse(pending[0]!.payload)).toMatchObject({
+    kind: "approval",
+    title: "MCP authorization: github",
+    detail: expect.stringContaining("Authorize GitHub MCP"),
+    command: "https://github.com/login/oauth/authorize",
+  });
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "request.created",
+      threadId: "thread",
+      request: expect.objectContaining({ kind: "approval", title: "MCP authorization: github" }),
+    }),
+  );
+});
+
+it("maps MCP elicitation responses to Codex RPC results", async () => {
+  storage = new Storage(":memory:");
+  storage.upsertHost({
+    id: "host",
+    name: "A",
+    hostname: "a",
+    port: 22,
+    username: "u",
+    hostKeySha256: "key",
+    identityFile: "/key",
+    createdAt: 1,
+  });
+  storage.createThread({
+    id: "thread",
+    hostId: "host",
+    codexThreadId: "codex",
+    tmuxSession: "cwb-thread",
+    remotePort: 45678,
+    workingDirectory: "/work",
+    title: "thread",
+    status: "waiting",
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  storage.putPending({
+    id: "mcp-form",
+    threadId: "thread",
+    payload: "{}",
+    rpcId: '"rpc-mcp-form"',
+    method: "mcpServer/elicitation/request",
+    params: JSON.stringify({
+      mode: "form",
+      requestedSchema: {
+        type: "object",
+        properties: {
+          repository: { type: "string" },
+          private: { type: "boolean" },
+        },
+      },
+    }),
+    createdAt: 1,
+  });
+  const runtime = new FakeRuntime();
+  app = await buildServer(
+    {
+      version: 1,
+      bindHost: "127.0.0.1",
+      port: 3210,
+      publicOrigin: "https://bridge.example",
+      passwordHash: await hashPassword("correct horse battery staple"),
+      sessionSecret: "x".repeat(32),
+      trustedProxy: "127.0.0.1",
+    },
+    storage,
+    { runtime, webRoot: false },
+  );
+  const base = { "x-forwarded-proto": "https", origin: "https://bridge.example" },
+    login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      headers: base,
+      payload: { password: "correct horse battery staple" },
+    }),
+    headers = {
+      ...base,
+      cookie: `${login.cookies[0]!.name}=${login.cookies[0]!.value}`,
+      "x-csrf-token": login.json().csrfToken,
+    };
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/api/threads/thread/requests/mcp-form",
+        headers,
+        payload: {
+          answers: {
+            repository: { answers: ["codex-web-bridge"] },
+            private: { answers: ["true"] },
+          },
+        },
+      })
+    ).statusCode,
+  ).toBe(204);
+  expect(runtime.resolutions).toEqual([
+    {
+      requestId: "rpc-mcp-form",
+      value: {
+        action: "accept",
+        content: { repository: "codex-web-bridge", private: true },
+        _meta: null,
+      },
+    },
+  ]);
+});
