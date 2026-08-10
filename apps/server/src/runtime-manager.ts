@@ -300,16 +300,7 @@ export class HostRuntimeManager implements RuntimeManager {
         new CodexClient({
           url: clientUrl,
         });
-      client.on("notification", (payload) =>
-        this.events.emit("event", { threadId: thread.id, type: "codex", payload } satisfies RuntimeEvent),
-      );
-      client.on("request", (payload) =>
-        this.events.emit("event", { threadId: thread.id, type: "codex", payload } satisfies RuntimeEvent),
-      );
-      console.error("[cwb:runtime] app-server-connect-started", { threadId: thread.id, url: clientUrl });
-      await client.connect();
-      console.error("[cwb:runtime] app-server-connect-succeeded", { threadId: thread.id, url: clientUrl });
-      return {
+      const active = {
         hostId: host.id,
         ssh,
         runtime,
@@ -319,6 +310,17 @@ export class HostRuntimeManager implements RuntimeManager {
         tmuxCreated,
         hasRollout: thread.hasRollout !== 0,
       };
+      client.on("notification", (payload) => {
+        this.trackTurn(active, payload);
+        this.events.emit("event", { threadId: thread.id, type: "codex", payload } satisfies RuntimeEvent);
+      });
+      client.on("request", (payload) =>
+        this.events.emit("event", { threadId: thread.id, type: "codex", payload } satisfies RuntimeEvent),
+      );
+      console.error("[cwb:runtime] app-server-connect-started", { threadId: thread.id, url: clientUrl });
+      await client.connect();
+      console.error("[cwb:runtime] app-server-connect-succeeded", { threadId: thread.id, url: clientUrl });
+      return active;
     } catch (error) {
       console.error(
         "[cwb:runtime] open-failed",
@@ -337,6 +339,11 @@ export class HostRuntimeManager implements RuntimeManager {
     } finally {
       this.connecting.delete(host.id);
     }
+  }
+  private trackTurn(active: Active, payload: { method?: string; params?: any }): void {
+    if (payload.method === "turn/started" && typeof payload.params?.turn?.id === "string")
+      active.turnId = payload.params.turn.id;
+    if (payload.method === "turn/completed" && payload.params?.turn?.id === active.turnId) active.turnId = undefined;
   }
   private async activate(host: HostRecord, thread: ThreadRecord, active: Active, withTerminal: boolean): Promise<void> {
     if (this.detached.has(thread.id)) throw new Error("thread runtime was detached");

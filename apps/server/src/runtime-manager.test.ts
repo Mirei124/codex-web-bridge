@@ -106,7 +106,9 @@ class FakeClient extends EventEmitter {
     this.calls.push("startTurn");
     return { turn: { id: "turn-1" } };
   }
-  async interruptTurn() {}
+  async interruptTurn(threadId: string, turnId: string) {
+    this.calls.push(`interruptTurn:${threadId}:${turnId}`);
+  }
   respond() {}
   async listThreads() {
     return { data: this.threads };
@@ -200,6 +202,30 @@ describe("runtime lifecycle reliability", () => {
     await expect(manager.terminalSeed(activeThread)).resolves.toBe("");
     await expect(manager.prepareTerminal(activeThread)).rejects.toThrow("first message");
     expect(runtime.calls).toEqual([]);
+    await manager.close();
+  });
+  it("tracks active turns from Codex notifications for interrupts after reconnects", async () => {
+    const { host, thread } = await fixture(),
+      ssh = new FakeSsh(),
+      runtime = new FakeRuntime(),
+      client = new FakeClient(),
+      manager = new HostRuntimeManager({
+        sshFactory: () => ssh as unknown as SshConnection,
+        runtimeFactory: () => runtime as unknown as TmuxCodexRuntime,
+        clientFactory: () => client as unknown as CodexClient,
+      });
+    await manager.resume(host, { ...thread, codexThreadId: "codex-1", hasRollout: 1 }, "codex-1");
+    client.emit("notification", {
+      method: "turn/started",
+      params: { threadId: "codex-1", turn: { id: "turn-from-notification" } },
+    });
+    await manager.interrupt({ ...thread, codexThreadId: "codex-1" });
+    client.emit("notification", {
+      method: "turn/completed",
+      params: { threadId: "codex-1", turn: { id: "turn-from-notification" } },
+    });
+    await manager.interrupt({ ...thread, codexThreadId: "codex-1" });
+    expect(client.calls).toEqual(["interruptTurn:codex-1:turn-from-notification"]);
     await manager.close();
   });
   it("cleans every opened resource and a newly-created tmux when thread/start fails", async () => {
