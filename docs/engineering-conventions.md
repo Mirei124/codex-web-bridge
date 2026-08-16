@@ -77,6 +77,10 @@ the related subsystem.
   per-command shell marker instead of relying exclusively on the SSH channel's
   optional `exit-status`. Keep the marker out of returned stderr so callers retain
   normal command semantics.
+- Do not assume remote tmux format output has one exact separator or arrives without
+  noise. Parsing for values such as pane dimensions or pane metadata must tolerate
+  variant separators like tabs, spaces, or underscores and should ignore unrelated
+  surrounding lines when possible.
 
 ### Terminal And Viewer
 
