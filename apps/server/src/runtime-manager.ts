@@ -14,6 +14,8 @@ import {
 import { CodexClient } from "@cwb/codex-client";
 import type { TerminalSnapshotResponse } from "@cwb/protocol";
 
+const SSH_CONNECT_TIMEOUT_MS = 15_000;
+
 export interface RuntimeEvent {
   threadId: string;
   type: "codex" | "terminal";
@@ -462,6 +464,7 @@ export class HostRuntimeManager implements RuntimeManager {
       port: host.port,
       username: host.username,
       hostHash: "sha256",
+      readyTimeout: SSH_CONNECT_TIMEOUT_MS,
       hostVerifier: (key: string) => key.toLowerCase() === expected,
     };
     const password = this.hostPasswords.get(host.id);

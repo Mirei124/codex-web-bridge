@@ -164,7 +164,7 @@ describe("runtime lifecycle reliability", () => {
       });
     manager.setHostPassword(host.id, "memory-only");
     await manager.exit(thread, host);
-    expect(captured).toMatchObject({ host: "a", username: "u", password: "memory-only" });
+    expect(captured).toMatchObject({ host: "a", username: "u", password: "memory-only", readyTimeout: 15_000 });
     expect(captured).not.toHaveProperty("privateKey");
   });
   it("keeps a fresh empty Codex thread headless until its first accepted turn", async () => {
