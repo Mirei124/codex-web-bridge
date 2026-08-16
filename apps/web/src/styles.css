@@ -671,11 +671,6 @@ nav small {
   align-items: center;
   gap: 10px;
 }
-.composer-hint {
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 700;
-}
 .composer textarea {
   flex: 1;
   resize: none;

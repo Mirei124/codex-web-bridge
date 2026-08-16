@@ -524,23 +524,6 @@ describe("dashboard security and operations", () => {
     expect(screen.getByText("Ready")).toBeInTheDocument();
   });
 
-  it("queues the next message with the Tab shortcut while Codex is generating", async () => {
-    const fetch = await openThread();
-    WebSocketStub.instances.at(-1)?.emit({
-      type: "thread.updated",
-      thread: { id: "t", hostId: "a", title: "Bridge", cwd: "/repo", updatedAt: "2026-01-01", status: "running" },
-    });
-    const composer = screen.getByPlaceholderText("继续对话…");
-    fireEvent.change(composer, { target: { value: "Queue this" } });
-    fireEvent.keyDown(composer, { key: "Tab" });
-    await waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith(
-        "/api/threads/t/messages",
-        expect.objectContaining({ method: "POST", body: JSON.stringify({ text: "Queue this", queue: true }) }),
-      ),
-    );
-  });
-
   it("opens the fullscreen composer and sends long text from the modal", async () => {
     const fetch = await openThread();
     fireEvent.click(screen.getByRole("button", { name: "全屏编辑" }));

@@ -969,7 +969,6 @@ export default function App() {
     selected?.status === "running" || Boolean(selected?.messages.some((m) => m.role === "assistant" && m.streaming));
   const selectedState = selected ? threadStateSummary(selected) : undefined;
   const composerDisabled = selected?.status === "exited" || selected?.status === "error";
-  const queueShortcutEnabled = Boolean(codexGenerating && draft.trim());
   useEffect(() => {
     if (codexGenerating) return;
     setInterruptArmedThreadId(undefined);
@@ -1424,7 +1423,6 @@ export default function App() {
                     >
                       全屏编辑
                     </button>
-                    {queueShortcutEnabled && <span className="composer-hint">Tab 可追加为下一条</span>}
                   </div>
                   <textarea
                     disabled={composerDisabled}
@@ -1438,11 +1436,6 @@ export default function App() {
                           : "继续对话…"
                     }
                     onKeyDown={(e) => {
-                      if (e.key === "Tab" && !e.shiftKey && queueShortcutEnabled) {
-                        e.preventDefault();
-                        void submitDraft(true);
-                        return;
-                      }
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         e.currentTarget.form?.requestSubmit();
