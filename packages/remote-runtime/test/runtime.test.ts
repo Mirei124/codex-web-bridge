@@ -156,6 +156,18 @@ describe("remote command safety", () => {
     expect(result).toMatchObject({ appServerPane: "%1", viewerPane: "%2" });
     expect(remote.calls.some((call) => call[1][0] === "new-session")).toBe(false);
   });
+  it("discovers an existing managed tmux session when pane separators arrive as underscores", async () => {
+    const remote = new FakeRemote();
+    remote.sessionExists = true;
+    remote.paneListing = "%0_app-server_\n%1_viewer_thread-1\n";
+    const result = await new TmuxCodexRuntime(remote, { runtimeDirectory: "/safe/runtime" }).start(
+      "existing",
+      "/tmp",
+      4000,
+    );
+    expect(result).toMatchObject({ appServerPane: "%0", viewerPane: "%1" });
+    expect(remote.calls.some((call) => call[1][0] === "new-session")).toBe(false);
+  });
   it("includes the tmux socket path and raw pane output when an existing session lacks app-server metadata", async () => {
     const remote = new FakeRemote();
     remote.sessionExists = true;

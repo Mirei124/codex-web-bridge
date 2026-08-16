@@ -447,8 +447,11 @@ export class TmuxCodexRuntime {
       "#{pane_id}\t#{@cwb-role}\t#{@cwb-thread}",
     ]);
     let appServerPane: string | undefined, viewerPane: string | undefined;
-    for (const line of result.stdout.trim().split("\n")) {
-      const [id, role] = line.split("\t");
+    for (const rawLine of result.stdout.trim().split("\n")) {
+      const line = rawLine.replace(/\r$/, "");
+      const match = line.match(/^([^\t _]+)(?:\t| +|_)([^\t _]*)(?:(?:\t| +|_)(.*))?$/);
+      if (!match) continue;
+      const [, id, role] = match;
       if (role === "app-server") appServerPane = id;
       if (role === "viewer") viewerPane = id;
     }
