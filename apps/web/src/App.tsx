@@ -1496,31 +1496,33 @@ export default function App() {
                       }
                     }}
                   />
-                  <div className="composer-tools">
-                    <button
-                      type="button"
-                      className="secondary"
-                      disabled={composerDisabled}
-                      onClick={() => setComposerExpanded((value) => !value)}
-                    >
-                      {composerExpanded ? "退出全屏" : "全屏编辑"}
-                    </button>
-                  </div>
-                  <div className="composer-actions">
-                    {codexGenerating && (
-                      <button type="button" className="danger" onClick={() => void interruptSelected()}>
-                        {interruptArmedThreadId === selected.id ? "再次点击中断" : "中断"}
+                  <div className="composer-side">
+                    <div className="composer-tools">
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={composerDisabled}
+                        onClick={() => setComposerExpanded((value) => !value)}
+                      >
+                        {composerExpanded ? "退出全屏" : "全屏编辑"}
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      className="secondary"
-                      disabled={composerDisabled || !draft.trim()}
-                      onClick={() => void submitDraft(true)}
-                    >
-                      排队
-                    </button>
-                    <button disabled={composerDisabled || !draft.trim()}>发送</button>
+                    </div>
+                    <div className="composer-actions">
+                      {codexGenerating && (
+                        <button type="button" className="danger" onClick={() => void interruptSelected()}>
+                          {interruptArmedThreadId === selected.id ? "再次点击中断" : "中断"}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={composerDisabled || !draft.trim()}
+                        onClick={() => void submitDraft(true)}
+                      >
+                        排队
+                      </button>
+                      <button disabled={composerDisabled || !draft.trim()}>发送</button>
+                    </div>
                   </div>
                 </form>
               </div>

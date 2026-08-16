@@ -86,12 +86,16 @@
   }
   .composer {
     padding: 11px 12px calc(12px + env(safe-area-inset-bottom));
+    display: flex;
     flex-direction: column;
   }
   .composer.expanded {
     inset: 0;
     padding: 16px 12px calc(12px + env(safe-area-inset-bottom));
     border-radius: 0 0 24px 24px;
+  }
+  .composer-side {
+    min-width: 0;
   }
   .composer-expanded-header {
     flex-direction: column;

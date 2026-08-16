@@ -722,8 +722,10 @@ nav small {
 .composer {
   border-top: 2px dashed #d9cfb9;
   padding: 15px max(24px, calc((100% - 850px) / 2));
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "textarea side";
+  align-items: stretch;
   gap: 11px;
   background: rgba(247, 243, 223, 0.84);
   position: relative;
@@ -740,6 +742,8 @@ nav small {
   position: absolute;
   inset: 0;
   border-top: 0;
+  display: flex;
+  flex-direction: column;
   padding: 22px max(24px, calc((100% - 920px) / 2)) 20px;
   background: linear-gradient(180deg, rgba(251, 248, 233, 0.98), rgba(247, 243, 223, 0.98)), rgba(247, 243, 223, 0.98);
   box-shadow: inset 0 0 0 1px rgba(123, 107, 84, 0.1);
@@ -769,6 +773,7 @@ nav small {
   gap: 10px;
 }
 .composer textarea {
+  grid-area: textarea;
   width: 100%;
   resize: none;
   border-radius: 22px;
@@ -793,11 +798,39 @@ nav small {
 .composer textarea:disabled {
   opacity: 0.62;
 }
+.composer-side {
+  grid-area: side;
+  min-width: 132px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+}
 .composer-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: flex-end;
   justify-content: flex-end;
+}
+.composer-side .composer-tools,
+.composer-side .composer-actions {
+  width: 100%;
+}
+.composer-side .composer-tools button,
+.composer-side .composer-actions button {
+  width: 100%;
+}
+.composer.expanded .composer-side {
+  min-width: 0;
+}
+.composer.expanded .composer-tools,
+.composer.expanded .composer-actions {
+  width: auto;
+}
+.composer.expanded .composer-tools button,
+.composer.expanded .composer-actions button {
+  width: auto;
 }
 .request {
   border: 2px dashed #d4c4a8;
