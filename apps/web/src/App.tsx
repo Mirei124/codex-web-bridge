@@ -1509,8 +1509,17 @@ export default function App() {
                     </div>
                     <div className="composer-actions">
                       {codexGenerating && (
-                        <button type="button" className="danger" onClick={() => void interruptSelected()}>
-                          {interruptArmedThreadId === selected.id ? "再次点击中断" : "中断"}
+                        <button
+                          type="button"
+                          className="danger composer-interrupt-button"
+                          onClick={() => void interruptSelected()}
+                        >
+                          <span className="composer-interrupt-button-label">
+                            {interruptArmedThreadId === selected.id ? "再次点击中断" : "中断"}
+                          </span>
+                          <span className="composer-interrupt-button-sizer" aria-hidden="true">
+                            再次点击中断
+                          </span>
                         </button>
                       )}
                       <button

@@ -827,6 +827,18 @@ nav small {
   flex: 1 1 0;
   min-width: 0;
 }
+.composer-interrupt-button {
+  display: inline-grid;
+  place-items: center;
+}
+.composer-interrupt-button-label,
+.composer-interrupt-button-sizer {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+.composer-interrupt-button-sizer {
+  visibility: hidden;
+}
 .composer.expanded .composer-side {
   min-width: 0;
 }
