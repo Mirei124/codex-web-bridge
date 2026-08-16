@@ -1476,52 +1476,49 @@ export default function App() {
                       </button>
                     </div>
                   )}
-                  <textarea
-                    ref={composerTextareaRef}
-                    disabled={composerDisabled}
-                    autoFocus={composerExpanded}
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    placeholder={
-                      selected.status === "exited"
-                        ? "该会话已退出"
-                        : selected.status === "error"
-                          ? "请先恢复或重新连接会话"
-                          : "继续对话…"
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        e.currentTarget.form?.requestSubmit();
+                  <div className="composer-textarea-shell">
+                    <textarea
+                      ref={composerTextareaRef}
+                      disabled={composerDisabled}
+                      autoFocus={composerExpanded}
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      placeholder={
+                        selected.status === "exited"
+                          ? "该会话已退出"
+                          : selected.status === "error"
+                            ? "请先恢复或重新连接会话"
+                            : "继续对话…"
                       }
-                    }}
-                  />
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          e.currentTarget.form?.requestSubmit();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="composer-expand-toggle secondary"
+                      aria-label={composerExpanded ? "退出全屏" : "全屏编辑"}
+                      title={composerExpanded ? "退出全屏" : "全屏编辑"}
+                      disabled={composerDisabled}
+                      onClick={() => setComposerExpanded((value) => !value)}
+                    >
+                      <svg viewBox="0 0 20 20" aria-hidden="true">
+                        <path
+                          d="M3 8V3h5M12 3h5v5M17 12v5h-5M8 17H3v-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
                   <div className="composer-side">
-                    <div className="composer-tools">
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={composerDisabled}
-                        onClick={() => setComposerExpanded((value) => !value)}
-                      >
-                        {composerExpanded ? "退出全屏" : "全屏编辑"}
-                      </button>
-                    </div>
                     <div className="composer-actions">
-                      {codexGenerating && (
-                        <button
-                          type="button"
-                          className="danger composer-interrupt-button"
-                          onClick={() => void interruptSelected()}
-                        >
-                          <span className="composer-interrupt-button-label">
-                            {interruptArmedThreadId === selected.id ? "确认中断" : "中断"}
-                          </span>
-                          <span className="composer-interrupt-button-sizer" aria-hidden="true">
-                            确认中断
-                          </span>
-                        </button>
-                      )}
                       <button
                         type="button"
                         className="secondary"
@@ -1531,6 +1528,11 @@ export default function App() {
                         排队
                       </button>
                       <button disabled={composerDisabled || !draft.trim()}>发送</button>
+                      {codexGenerating && (
+                        <button type="button" className="danger" onClick={() => void interruptSelected()}>
+                          {interruptArmedThreadId === selected.id ? "确认中断" : "中断"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </form>

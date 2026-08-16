@@ -94,23 +94,24 @@
     padding: 16px 12px calc(12px + env(safe-area-inset-bottom));
     border-radius: 0 0 24px 24px;
   }
+  .composer-textarea-shell {
+    width: 100%;
+  }
   .composer-side {
     min-width: 0;
+    width: 100%;
   }
   .composer-expanded-header {
-    flex-direction: column;
-  }
-  .composer-tools {
-    align-items: flex-start;
     flex-direction: column;
   }
   .composer-actions {
     justify-content: flex-end;
     width: 100%;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
   }
   .composer-actions button {
-    flex: 1;
+    flex: 0 0 auto;
   }
   .terminal-panel {
     padding: 12px;
