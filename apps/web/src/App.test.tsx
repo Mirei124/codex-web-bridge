@@ -158,8 +158,6 @@ describe("dashboard security and operations", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /新会话/ }));
     fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "/repo/new" } });
-    fireEvent.change(screen.getByLabelText("代理地址（可选）"), { target: { value: "http://proxy.example:7890" } });
-    fireEvent.change(screen.getByLabelText(/^会话前置 PATH/), { target: { value: "/thread/bin:/opt/bin" } });
     fireEvent.click(
       await within(screen.getByRole("heading", { name: "创建会话" }).parentElement!).findByRole("button", {
         name: "创建",
@@ -172,16 +170,20 @@ describe("dashboard security and operations", () => {
     expect(JSON.parse(String(create.body))).toEqual({
       hostId: "a",
       cwd: "/repo/new",
-      proxy: "http://proxy.example:7890",
-      prependPath: "/thread/bin:/opt/bin",
     });
     fireEvent.click(screen.getByRole("button", { name: "恢复" }));
-    fireEvent.change(screen.getByLabelText("Codex Thread ID"), { target: { value: "codex-123" } });
-    fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "/repo/resumed" } });
     fireEvent.change(screen.getByLabelText("代理地址（可选）"), { target: { value: "https://proxy.example:8443" } });
     fireEvent.change(screen.getByLabelText(/^会话前置 PATH/), { target: { value: "/resume/bin" } });
+    fireEvent.change(screen.getByPlaceholderText("留空则使用历史会话目录"), { target: { value: "/repo/resumed" } });
     fireEvent.click(
-      within(screen.getByRole("heading", { name: "恢复会话" }).parentElement!).getByRole("button", { name: "恢复" }),
+      within(screen.getByRole("heading", { name: "恢复会话" }).parentElement!).getByRole("button", { name: "下一步" }),
+    );
+    await screen.findByText("最近 6 条历史会话");
+    fireEvent.change(screen.getByLabelText("Codex Thread ID"), { target: { value: "codex-123" } });
+    fireEvent.click(
+      within(screen.getByRole("heading", { name: "恢复会话" }).parentElement!).getByRole("button", {
+        name: "按 ID 恢复",
+      }),
     );
     expect(await screen.findByRole("heading", { name: "Resumed" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith("/api/threads/resume", expect.objectContaining({ method: "POST" }));
@@ -258,8 +260,6 @@ describe("dashboard security and operations", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /新会话/ }));
     expect(await screen.findByDisplayValue("/remembered")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("http://proxy:8080")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("/custom/bin")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "/older" }));
     expect(screen.getByLabelText("工作目录")).toHaveValue("/older");
     fireEvent.click(screen.getByRole("button", { name: "删除 /older" }));
@@ -319,11 +319,8 @@ describe("dashboard security and operations", () => {
     fireEvent.click(await screen.findByRole("button", { name: /新会话/ }));
     expect(await screen.findByLabelText("主机")).toHaveValue("b");
     expect(screen.getByLabelText("工作目录")).toHaveValue("/repo/b");
-    expect(screen.getByLabelText("代理地址（可选）")).toHaveValue("http://b-proxy:8080");
     fireEvent.change(screen.getByLabelText("主机"), { target: { value: "a" } });
     expect(screen.getByLabelText("工作目录")).toHaveValue("/repo/a");
-    expect(screen.getByLabelText("代理地址（可选）")).toHaveValue("");
-    expect(screen.getByLabelText(/^会话前置 PATH/)).toHaveValue("/a/bin");
     fireEvent.click(screen.getByRole("button", { name: "创建" }));
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
@@ -474,13 +471,17 @@ describe("dashboard security and operations", () => {
     vi.stubGlobal("fetch", fetch);
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "恢复" }));
-    const discovered = await screen.findByLabelText("发现的历史会话");
-    expect(within(discovered).getByRole("option", { name: "Found task · /repo/found" })).toBeInTheDocument();
-    fireEvent.change(discovered, { target: { value: "codex-found" } });
-    expect(screen.getByLabelText("Codex Thread ID")).toHaveValue("codex-found");
-    expect(screen.getByLabelText("工作目录")).toHaveValue("/repo/found");
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    expect(await screen.findByText("最近 6 条历史会话")).toBeInTheDocument();
+    const discovered = screen.getByRole("button", { name: /Found task/ });
+    expect(within(discovered).getByText("codex-found")).toBeInTheDocument();
+    expect(within(discovered).getByText("/repo/found")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Codex Thread ID"), { target: { value: "codex-found" } });
+    expect(screen.getByText("默认目录：/repo/found")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Codex Thread ID"), { target: { value: "manual-id" } });
     expect(screen.getByLabelText("Codex Thread ID")).toHaveValue("manual-id");
+    fireEvent.change(screen.getByPlaceholderText("留空则使用历史会话目录"), { target: { value: "/repo/manual" } });
+    expect(screen.getByPlaceholderText("留空则使用历史会话目录")).toHaveValue("/repo/manual");
     expect(fetch).toHaveBeenCalledWith("/api/hosts/a/codex-threads", expect.anything());
   });
 
@@ -546,11 +547,13 @@ describe("dashboard security and operations", () => {
         cwd: "/repo",
         updatedAt: "2026-01-01",
         status: "error",
+        lastErrorKind: "reconnect_failed",
         lastError: "Unable to reconnect to the remote Codex runtime",
       },
     });
     expect(await screen.findByText("会话错误：Unable to reconnect to the remote Codex runtime")).toBeInTheDocument();
-    expect(screen.getAllByText(/error · Unable to reconnect to the remote Codex runtime/)).not.toHaveLength(0);
+    expect(screen.getByText("连接已断开 · /repo")).toBeInTheDocument();
+    expect(screen.getByText("/repo · 连接已断开")).toBeInTheDocument();
   });
 
   it("sends session scope for allow all approvals", async () => {
