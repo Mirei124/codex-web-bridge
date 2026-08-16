@@ -77,6 +77,12 @@ function isLoopbackOrigin(origin: string, host: string, port: number): boolean {
     return false;
   }
 }
+function accessDeniedMessage(request: FastifyRequest, config: AppConfig): string {
+  const direct = request.headers["x-forwarded-proto"] === undefined;
+  if (direct && config.bindHost === "127.0.0.1")
+    return "This dashboard only accepts localhost connections. Open it on the server itself, use SSH port forwarding, or expose it through a trusted HTTPS reverse proxy.";
+  return "Request origin is not allowed for this dashboard.";
+}
 function summary(thread: ThreadRecord): ThreadSummary {
   return {
     id: thread.id,
@@ -300,7 +306,7 @@ export async function buildServer(
         request.headers["x-forwarded-proto"] === undefined,
       )
     )
-      return reply.code(403).send({ error: "forbidden" });
+      return reply.code(403).send({ error: "forbidden", message: accessDeniedMessage(request, config) });
   });
   const attempts = new Map<string, { count: number; resetAt: number }>();
   app.post<{ Body: { password?: string } }>(apiRoutes.login, async (request, reply) => {

@@ -94,6 +94,10 @@ describe("HTTP boundary", () => {
       payload: { password: "correct horse battery staple" },
     });
     expect(nonLoopback.statusCode).toBe(403);
+    expect(nonLoopback.json()).toMatchObject({
+      error: "forbidden",
+      message: expect.stringContaining("only accepts localhost connections"),
+    });
   });
   it("accepts the browser's actual HTTP origin only in all-interface danger mode", async () => {
     storage = new Storage(":memory:");
