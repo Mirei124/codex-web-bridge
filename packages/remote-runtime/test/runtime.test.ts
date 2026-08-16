@@ -16,6 +16,7 @@ class FakeRemote implements RemoteExecutor {
   probeReady = false;
   commandLookupCode: number | null = 0;
   appServerLog = "";
+  paneListing = "%1\tapp-server\t\n%2\tviewer\tthread-1\n";
   streams: any[] = [];
   async execute(program: string, args: readonly string[] = []): Promise<CommandResult> {
     this.calls.push([program, args]);
@@ -25,10 +26,11 @@ class FakeRemote implements RemoteExecutor {
       return { stdout: "codex 1.0.0\n", stderr: "", code: 0 };
     if (program.endsWith("tmux") && args[0] === "has-session")
       return { stdout: "", stderr: "", code: this.sessionExists ? 0 : 1 };
-    if (program.endsWith("tmux") && args[0] === "list-panes")
-      return { stdout: "%1\tapp-server\t\n%2\tviewer\tthread-1\n", stderr: "", code: 0 };
+    if (program.endsWith("tmux") && args[0] === "list-panes") return { stdout: this.paneListing, stderr: "", code: 0 };
     if (program.endsWith("tmux") && args[0] === "new-session") return { stdout: "%1\n", stderr: "", code: 0 };
     if (program.endsWith("tmux") && args[0] === "split-window") return { stdout: "%2\n", stderr: "", code: 0 };
+    if (program.endsWith("tmux") && args[0] === "display-message" && args.at(-1) === "#{socket_path}")
+      return { stdout: "/tmp/tmux-1000/default\n", stderr: "", code: 0 };
     if (program.endsWith("tmux") && args[0] === "display-message") return { stdout: "93\t31\n", stderr: "", code: 0 };
     if (program === "stat" || program === "id") return { stdout: "1000\n", stderr: "", code: 0 };
     if (program === "sh" && args[0] === "-c" && args[1] === 'test -f "$1" && tail -n 20 "$1"')
@@ -153,6 +155,16 @@ describe("remote command safety", () => {
     );
     expect(result).toMatchObject({ appServerPane: "%1", viewerPane: "%2" });
     expect(remote.calls.some((call) => call[1][0] === "new-session")).toBe(false);
+  });
+  it("includes the tmux socket path and raw pane output when an existing session lacks app-server metadata", async () => {
+    const remote = new FakeRemote();
+    remote.sessionExists = true;
+    remote.paneListing = "%1\t\t\n%2\tviewer\tthread-1\n";
+    await expect(
+      new TmuxCodexRuntime(remote, { runtimeDirectory: "/safe/runtime" }).start("existing", "/tmp", 4000),
+    ).rejects.toThrow(
+      /Existing tmux session 'existing' is not managed by Codex Web Bridge[\s\S]*socket_path: \/tmp\/tmux-1000\/default[\s\S]*tmux list-panes stdout/,
+    );
   });
   it("waits for the forwarded app-server port", async () => {
     const remote = new FakeRemote();

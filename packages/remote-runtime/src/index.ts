@@ -452,7 +452,24 @@ export class TmuxCodexRuntime {
       if (role === "app-server") appServerPane = id;
       if (role === "viewer") viewerPane = id;
     }
-    if (!appServerPane) throw new Error(`Existing tmux session '${name}' is not managed by Codex Web Bridge`);
+    if (!appServerPane) {
+      const socketResult = await this.remote.execute(this.resolvedTmux ?? this.tmux, [
+        "display-message",
+        "-p",
+        "-t",
+        name,
+        "#{socket_path}",
+      ]);
+      const detail = [
+        `Existing tmux session '${name}' is not managed by Codex Web Bridge`,
+        `tmux socket_path: ${socketResult.stdout.trim() || "(empty)"}`,
+        `tmux list-panes stdout: ${JSON.stringify(result.stdout)}`,
+        `tmux list-panes stderr: ${JSON.stringify(result.stderr)}`,
+      ];
+      if ((socketResult.stderr || "").trim())
+        detail.push(`tmux socket_path stderr: ${JSON.stringify(socketResult.stderr)}`);
+      throw new Error(detail.join("\n"));
+    }
     return { appServerPane, viewerPane };
   }
   private appServerCommand(remotePort: number, appServerLogPath: string, proxy?: string): string {
