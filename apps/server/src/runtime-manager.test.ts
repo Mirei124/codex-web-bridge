@@ -29,11 +29,13 @@ class FakeStream extends EventEmitter {
 class FakeSsh {
   closed = false;
   forwardClosed = false;
+  forwardedPorts: number[] = [];
   async connect() {}
   close() {
     this.closed = true;
   }
-  async forwardRemotePort() {
+  async forwardRemotePort(remotePort: number) {
+    this.forwardedPorts.push(remotePort);
     return {
       port: 12345,
       close: async () => {
@@ -47,6 +49,7 @@ class FakeRuntime {
   failStop = false;
   stream = new FakeStream();
   calls: string[] = [];
+  sessionRemotePort?: number;
   async checkPrerequisites() {}
   async exists() {
     return false;
@@ -54,7 +57,9 @@ class FakeRuntime {
   async start(name: string, _cwd: string, remotePort: number) {
     return { name, appServerPane: "%1", remotePort, fifoPath: "/fifo", appServerLogPath: "/log" };
   }
-  async waitUntilReady() {}
+  async waitUntilReady(session: any) {
+    return this.sessionRemotePort ? { ...session, remotePort: this.sessionRemotePort } : session;
+  }
   async attachViewer(session: any, _cwd: string, threadId: string) {
     this.calls.push("attachViewer");
     return { ...session, viewerPane: "%2", threadId };
@@ -179,7 +184,7 @@ describe("runtime lifecycle reliability", () => {
       });
     const created = await manager.create(host, thread),
       codexId = created.id;
-    expect(created).toEqual({ id: "codex-1", model: undefined });
+    expect(created).toEqual({ id: "codex-1", model: undefined, remotePort: 45678 });
     expect(runtime.calls).toEqual([]);
     await manager.send({ ...thread, codexThreadId: codexId }, "hello");
     expect(client.calls).toEqual(["startTurn"]);
@@ -226,6 +231,22 @@ describe("runtime lifecycle reliability", () => {
     });
     await manager.interrupt({ ...thread, codexThreadId: "codex-1" });
     expect(client.calls).toEqual(["interruptTurn:codex-1:turn-from-notification"]);
+    await manager.close();
+  });
+  it("forwards and persists the actual app-server port when readiness detects a different port", async () => {
+    const { host, thread } = await fixture(),
+      ssh = new FakeSsh(),
+      runtime = new FakeRuntime(),
+      client = new FakeClient(),
+      manager = new HostRuntimeManager({
+        sshFactory: () => ssh as unknown as SshConnection,
+        runtimeFactory: () => runtime as unknown as TmuxCodexRuntime,
+        clientFactory: () => client as unknown as CodexClient,
+      });
+    runtime.sessionRemotePort = 51110;
+    const created = await manager.create(host, thread);
+    expect(created).toMatchObject({ id: "codex-1", remotePort: 51110 });
+    expect(ssh.forwardedPorts).toEqual([51110]);
     await manager.close();
   });
   it("cleans every opened resource and a newly-created tmux when thread/start fails", async () => {

@@ -233,12 +233,13 @@ export class TmuxCodexRuntime {
       appServerLogPath = `${runtimeDirectory}/${name}.app-server.log`;
     await this.prepareRuntimeDirectory(runtimeDirectory);
     const panes = await this.findPanes(name);
+    const existingPort = await this.detectLoggedRemotePort(appServerLogPath);
     if (panes)
       return {
         name,
         appServerPane: panes.appServerPane,
         viewerPane: panes.viewerPane,
-        remotePort,
+        remotePort: existingPort ?? remotePort,
         fifoPath,
         appServerLogPath,
       };
@@ -276,24 +277,34 @@ export class TmuxCodexRuntime {
   async waitUntilReady(
     session: RemoteSession,
     options: { timeoutMs?: number; intervalMs?: number } = {},
-  ): Promise<void> {
+  ): Promise<RemoteSession> {
     if (!this.remote.probeTcp) throw new Error("Remote executor does not support TCP readiness probes");
     const deadline = Date.now() + (options.timeoutMs ?? 15_000);
+    let activeSession = session;
     do {
-      if (await this.remote.probeTcp("127.0.0.1", session.remotePort)) return;
-      if (!(await this.exists(session.name)))
+      if (await this.remote.probeTcp("127.0.0.1", activeSession.remotePort)) return activeSession;
+      const detectedPort = await this.detectLoggedRemotePort(activeSession.appServerLogPath);
+      if (detectedPort && detectedPort !== activeSession.remotePort) {
+        const detectedSession = { ...activeSession, remotePort: detectedPort };
+        if (await this.remote.probeTcp("127.0.0.1", detectedPort)) return detectedSession;
+        activeSession = detectedSession;
+      }
+      if (!(await this.exists(activeSession.name)))
         throw new Error(
           this.describeAppServerFailure(
             "Codex app-server tmux session exited before becoming ready",
-            await this.appServerLogExcerpt(session.appServerLogPath),
+            await this.appServerLogExcerpt(activeSession.appServerLogPath),
           ),
         );
       await new Promise((resolve) => setTimeout(resolve, options.intervalMs ?? 100));
     } while (Date.now() < deadline);
+    const detectedPort = await this.detectLoggedRemotePort(activeSession.appServerLogPath);
+    if (detectedPort && detectedPort !== activeSession.remotePort)
+      activeSession = { ...activeSession, remotePort: detectedPort };
     throw new Error(
       this.describeAppServerFailure(
-        `Codex app-server did not listen on port ${session.remotePort} before timeout`,
-        await this.appServerLogExcerpt(session.appServerLogPath),
+        `Codex app-server did not listen on port ${activeSession.remotePort} before timeout`,
+        await this.appServerLogExcerpt(activeSession.appServerLogPath),
       ),
     );
   }
@@ -493,12 +504,25 @@ export class TmuxCodexRuntime {
     const output = `${result.stdout}${result.stderr}`.trim();
     return output || undefined;
   }
+  private async detectLoggedRemotePort(appServerLogPath: string): Promise<number | undefined> {
+    const output = await this.appServerLogExcerpt(appServerLogPath);
+    return output ? parseAppServerListeningPort(output) : undefined;
+  }
   private describeExecutableFailure(program: string, result: CommandResult): string {
     const detail = (result.stderr || result.stdout).trim();
     return detail ? `Remote ${program} failed: ${detail}` : `Remote ${program} failed (${result.code ?? "unknown"})`;
   }
   private describeAppServerFailure(message: string, output: string | undefined): string {
     return output ? `${message}. Last app-server output:\n${output}` : message;
+  }
+}
+
+export function parseAppServerListeningPort(output: string): number | undefined {
+  for (const line of output.trim().split(/\r?\n/).reverse()) {
+    const match = line.match(/listening on:\s+ws:\/\/127\.0\.0\.1:(\d+)\b/i);
+    if (!match) continue;
+    const port = Number(match[1]);
+    if (Number.isInteger(port) && port >= 1024 && port <= 65535) return port;
   }
 }
 

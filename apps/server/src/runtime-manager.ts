@@ -24,8 +24,12 @@ export interface RuntimeEvent {
 export interface RuntimeManager {
   events: EventEmitter;
   ensureWorkingDirectory?(host: HostRecord, cwd: string, create: boolean): Promise<boolean>;
-  create(host: HostRecord, thread: ThreadRecord): Promise<string | { id: string; model?: string }>;
-  resume(host: HostRecord, thread: ThreadRecord, codexThreadId: string): Promise<void | { model?: string }>;
+  create(host: HostRecord, thread: ThreadRecord): Promise<string | { id: string; model?: string; remotePort?: number }>;
+  resume(
+    host: HostRecord,
+    thread: ThreadRecord,
+    codexThreadId: string,
+  ): Promise<void | { model?: string; remotePort?: number }>;
   probe?(host: HostRecord, thread: ThreadRecord): Promise<"reachable" | "missing">;
   reconnect(host: HostRecord, thread: ThreadRecord): Promise<void>;
   detach?(threadId: string): Promise<void>;
@@ -131,7 +135,7 @@ export class HostRuntimeManager implements RuntimeManager {
     }
     throw lastError instanceof Error ? lastError : new Error("unable to start Codex history probe");
   }
-  async create(host: HostRecord, thread: ThreadRecord): Promise<{ id: string; model?: string }> {
+  async create(host: HostRecord, thread: ThreadRecord): Promise<{ id: string; model?: string; remotePort?: number }> {
     this.detached.delete(thread.id);
     console.error("[cwb:runtime] create-started", {
       hostId: host.id,
@@ -142,14 +146,23 @@ export class HostRuntimeManager implements RuntimeManager {
     try {
       const created = await active.client.createThread({ cwd: thread.workingDirectory });
       active.hasRollout = false;
-      await this.activate(host, { ...thread, codexThreadId: created.id }, active, false);
-      return { id: created.id, model: typeof created.model === "string" ? created.model : undefined };
+      const activeThread = { ...thread, codexThreadId: created.id, remotePort: active.session.remotePort };
+      await this.activate(host, activeThread, active, false);
+      return {
+        id: created.id,
+        model: typeof created.model === "string" ? created.model : undefined,
+        remotePort: active.session.remotePort,
+      };
     } catch (error) {
       await this.dispose(active, { stopTmux: active.tmuxCreated && !this.detached.has(thread.id) });
       throw error;
     }
   }
-  async resume(host: HostRecord, thread: ThreadRecord, codexThreadId: string): Promise<{ model?: string }> {
+  async resume(
+    host: HostRecord,
+    thread: ThreadRecord,
+    codexThreadId: string,
+  ): Promise<{ model?: string; remotePort?: number }> {
     this.detached.delete(thread.id);
     const active = await this.open(host, thread);
     try {
@@ -161,8 +174,11 @@ export class HostRuntimeManager implements RuntimeManager {
           codexThreadId,
           thread.proxy,
         );
-      await this.activate(host, thread, active, active.hasRollout);
-      return { model: typeof resumed.model === "string" ? resumed.model : undefined };
+      await this.activate(host, { ...thread, remotePort: active.session.remotePort }, active, active.hasRollout);
+      return {
+        model: typeof resumed.model === "string" ? resumed.model : undefined,
+        remotePort: active.session.remotePort,
+      };
     } catch (error) {
       await this.dispose(active, { stopTmux: active.tmuxCreated && !this.detached.has(thread.id) });
       throw error;
@@ -301,15 +317,15 @@ export class HostRuntimeManager implements RuntimeManager {
       const existed = await runtime.exists(thread.tmuxSession);
       session = await runtime.start(thread.tmuxSession, thread.workingDirectory, thread.remotePort, thread.proxy);
       tmuxCreated = !existed;
-      await runtime.waitUntilReady(session);
+      session = await runtime.waitUntilReady(session);
       console.error("[cwb:runtime] remote-ready", {
         threadId: thread.id,
-        remotePort: thread.remotePort,
+        remotePort: session.remotePort,
       });
-      forward = await ssh.forwardRemotePort(thread.remotePort);
+      forward = await ssh.forwardRemotePort(session.remotePort);
       console.error("[cwb:runtime] forward-ready", {
         threadId: thread.id,
-        remotePort: thread.remotePort,
+        remotePort: session.remotePort,
         localPort: forward.port,
       });
       const clientUrl = `ws://127.0.0.1:${forward.port}`;
@@ -345,7 +361,7 @@ export class HostRuntimeManager implements RuntimeManager {
         {
           hostId: host.id,
           threadId: thread.id,
-          remotePort: thread.remotePort,
+          remotePort: session?.remotePort ?? thread.remotePort,
         },
         error,
       );

@@ -4,6 +4,7 @@ import {
   commandLine,
   shellQuote,
   TmuxCodexRuntime,
+  parseAppServerListeningPort,
   parsePaneDimensions,
   withPrependedPath,
   type CommandResult,
@@ -14,6 +15,7 @@ class FakeRemote implements RemoteExecutor {
   calls: Array<[string, readonly string[]]> = [];
   sessionExists = false;
   probeReady = false;
+  readyPorts = new Set<number>();
   commandLookupCode: number | null = 0;
   appServerLog = "";
   paneListing = "%1\tapp-server\t\n%2\tviewer\tthread-1\n";
@@ -49,8 +51,8 @@ class FakeRemote implements RemoteExecutor {
     this.streams.push(stream);
     return stream;
   }
-  async probeTcp() {
-    return this.probeReady;
+  async probeTcp(_host: string, port: number) {
+    return this.readyPorts.size > 0 ? this.readyPorts.has(port) : this.probeReady;
   }
   async realpath() {
     return "/home/alice";
@@ -62,6 +64,14 @@ describe("remote command safety", () => {
     expect(parsePaneDimensions("80 11\r\n")).toEqual({ cols: 80, rows: 11 });
     expect(parsePaneDimensions("80_11\n")).toEqual({ cols: 80, rows: 11 });
     expect(parsePaneDimensions("welcome only\n")).toBeUndefined();
+  });
+  it("parses the actual app-server listening port from recent log output", () => {
+    expect(
+      parseAppServerListeningPort(
+        "codex app-server (WebSockets) listening on: ws://127.0.0.1:51110 readyz: http://127.0.0.1:51110/readyz",
+      ),
+    ).toBe(51110);
+    expect(parseAppServerListeningPort("no listen line")).toBeUndefined();
   });
   it("quotes every argument at the SSH shell boundary", () => {
     expect(commandLine("printf", ["a'b", "$(bad)"])).toBe("'printf' 'a'\\''b' '$(bad)'");
@@ -148,12 +158,13 @@ describe("remote command safety", () => {
   it("discovers an existing managed tmux session without replacing it", async () => {
     const remote = new FakeRemote();
     remote.sessionExists = true;
+    remote.appServerLog = "codex app-server (WebSockets) listening on: ws://127.0.0.1:41111\n";
     const result = await new TmuxCodexRuntime(remote, { runtimeDirectory: "/safe/runtime" }).start(
       "existing",
       "/tmp",
       4000,
     );
-    expect(result).toMatchObject({ appServerPane: "%1", viewerPane: "%2" });
+    expect(result).toMatchObject({ appServerPane: "%1", viewerPane: "%2", remotePort: 41111 });
     expect(remote.calls.some((call) => call[1][0] === "new-session")).toBe(false);
   });
   it("discovers an existing managed tmux session when pane separators arrive as underscores", async () => {
@@ -182,10 +193,36 @@ describe("remote command safety", () => {
     const remote = new FakeRemote();
     remote.sessionExists = true;
     setTimeout(() => (remote.probeReady = true), 5);
-    await new TmuxCodexRuntime(remote).waitUntilReady(
-      { name: "ready", appServerPane: "ready:0.0", remotePort: 4000, fifoPath: "/tmp/x", appServerLogPath: "/tmp/log" },
-      { timeoutMs: 100, intervalMs: 1 },
-    );
+    await expect(
+      new TmuxCodexRuntime(remote).waitUntilReady(
+        {
+          name: "ready",
+          appServerPane: "ready:0.0",
+          remotePort: 4000,
+          fifoPath: "/tmp/x",
+          appServerLogPath: "/tmp/log",
+        },
+        { timeoutMs: 100, intervalMs: 1 },
+      ),
+    ).resolves.toMatchObject({ remotePort: 4000 });
+  });
+  it("switches to the actual app-server port from the log when Codex binds a different port", async () => {
+    const remote = new FakeRemote();
+    remote.sessionExists = true;
+    remote.appServerLog = "codex app-server (WebSockets) listening on: ws://127.0.0.1:51110\n";
+    remote.readyPorts.add(51110);
+    await expect(
+      new TmuxCodexRuntime(remote).waitUntilReady(
+        {
+          name: "ready",
+          appServerPane: "ready:0.0",
+          remotePort: 51273,
+          fifoPath: "/tmp/x",
+          appServerLogPath: "/tmp/log",
+        },
+        { timeoutMs: 100, intervalMs: 1 },
+      ),
+    ).resolves.toMatchObject({ remotePort: 51110 });
   });
   it("includes the last app-server output when startup exits early", async () => {
     const remote = new FakeRemote();

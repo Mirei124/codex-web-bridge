@@ -623,7 +623,10 @@ export async function buildServer(
     try {
       const created = await runtime.create(host, thread);
       const codexThreadId = typeof created === "string" ? created : created.id;
-      clearThreadError(storage, id, "idle", { codexThreadId });
+      clearThreadError(storage, id, "idle", {
+        codexThreadId,
+        ...(typeof created === "string" || created.remotePort === undefined ? {} : { remotePort: created.remotePort }),
+      });
       publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
       return reply.code(201).send({
         ...detail(storage, storage.thread(id)!, queuedThreadMessages(id)),
@@ -673,7 +676,12 @@ export async function buildServer(
       storage.createThread(thread);
       try {
         const resumed = await runtime.resume(host, thread, request.body.codexThreadId);
-        clearThreadError(storage, id, "idle");
+        clearThreadError(
+          storage,
+          id,
+          "idle",
+          resumed?.remotePort === undefined ? undefined : { remotePort: resumed.remotePort },
+        );
         publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
         return reply.code(201).send({
           ...detail(storage, storage.thread(id)!, queuedThreadMessages(id)),
@@ -728,8 +736,13 @@ export async function buildServer(
     });
     const resuming = storage.thread(thread.id)!;
     try {
-      await runtime.resume(host, resuming, resuming.codexThreadId!);
-      clearThreadError(storage, thread.id, "idle");
+      const resumed = await runtime.resume(host, resuming, resuming.codexThreadId!);
+      clearThreadError(
+        storage,
+        thread.id,
+        "idle",
+        resumed?.remotePort === undefined ? undefined : { remotePort: resumed.remotePort },
+      );
       publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
       return detail(storage, storage.thread(thread.id)!, queuedThreadMessages(thread.id));
     } catch (error) {
