@@ -97,9 +97,42 @@ async function pid(): Promise<number | undefined> {
   }
 }
 
-async function alive(value: number): Promise<boolean> {
+async function pidMetadata(): Promise<{ pid: number; startTimeTicks?: string } | undefined> {
+  try {
+    const value = JSON.parse(await readFile(paths().pid, "utf8")) as {
+      pid?: number;
+      marker?: string;
+      startTimeTicks?: string;
+    };
+    if (value.marker !== "codex-web-bridge-daemon" || !value.pid) return;
+    return { pid: value.pid, ...(value.startTimeTicks ? { startTimeTicks: value.startTimeTicks } : {}) };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError) return;
+    throw error;
+  }
+}
+
+async function linuxStartTimeTicks(pid: number): Promise<string | undefined> {
+  if (process.platform !== "linux") return;
+  try {
+    const stat = await readFile(`/proc/${pid}/stat`, "utf8");
+    const close = stat.lastIndexOf(")");
+    if (close < 0) return;
+    const fields = stat.slice(close + 2).trim().split(/\s+/);
+    return fields[19];
+  } catch (error) {
+    if (["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) return;
+    throw error;
+  }
+}
+
+async function alive(value: number, expectedStartTimeTicks?: string): Promise<boolean> {
   try {
     process.kill(value, 0);
+    if (expectedStartTimeTicks) {
+      const currentStartTimeTicks = await linuxStartTimeTicks(value);
+      return currentStartTimeTicks === expectedStartTimeTicks;
+    }
     if (process.platform === "linux") {
       const command = await readFile(`/proc/${value}/cmdline`, "utf8");
       return command.includes("daemon.js") || command.includes("__daemon");
@@ -229,9 +262,9 @@ function validateDaemonOptions(command: DaemonCommand, args: string[]): { json: 
 }
 
 async function start(args: string[], json: boolean, foreground: boolean, emit = true): Promise<void> {
-  const old = await pid();
-  if (old && (await alive(old)))
-    throw new ControlRequestError({ code: "conflict", message: `already running (PID ${old})` });
+  const old = await pidMetadata();
+  if (old && (await alive(old.pid, old.startTimeTicks)))
+    throw new ControlRequestError({ code: "conflict", message: `already running (PID ${old.pid})` });
   if (old) await unlink(paths().pid).catch(() => undefined);
   await clearStaleControlLock();
   const configured = await configure(args);
@@ -266,15 +299,15 @@ async function start(args: string[], json: boolean, foreground: boolean, emit = 
     }
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {
-      const current = await pid();
+      const current = await pidMetadata();
       try {
         const ready = JSON.parse(await readFile(paths().ready, "utf8")) as { pid: number };
-        if (current && ready.pid === current && (await alive(current))) {
+        if (current && ready.pid === current.pid && (await alive(current.pid, current.startTimeTicks))) {
           if (emit) {
             success(
               {
                 state: "running",
-                pid: current,
+                pid: current.pid,
                 ...(configured.generatedPassword ? { generatedPassword: configured.generatedPassword } : {}),
               },
               json,
@@ -305,24 +338,26 @@ async function start(args: string[], json: boolean, foreground: boolean, emit = 
 }
 
 async function stop(json: boolean, emit = true): Promise<{ state: "not_running" | "stopped"; pid?: number }> {
-  const current = await pid();
-  if (!current || !(await alive(current))) {
+  const current = await pidMetadata();
+  if (!current || !(await alive(current.pid, current.startTimeTicks))) {
     if (current) await unlink(paths().pid).catch(() => undefined);
     const result = { state: "not_running" as const };
     if (emit) success(result, json, "result", "stop");
     return result;
   }
-  process.kill(current, "SIGTERM");
+  process.kill(current.pid, "SIGTERM");
   const deadline = Date.now() + 5000;
-  while (Date.now() < deadline && (await alive(current))) await new Promise((resolve) => setTimeout(resolve, 50));
-  if (await alive(current)) {
-    process.kill(current, "SIGKILL");
+  while (Date.now() < deadline && (await alive(current.pid, current.startTimeTicks)))
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  if (await alive(current.pid, current.startTimeTicks)) {
+    process.kill(current.pid, "SIGKILL");
     const killDeadline = Date.now() + 1000;
-    while (Date.now() < killDeadline && (await alive(current))) await new Promise((resolve) => setTimeout(resolve, 50));
-    if (await alive(current))
-      throw new ControlRequestError({ code: "timeout", message: `daemon PID ${current} survived SIGKILL` });
+    while (Date.now() < killDeadline && (await alive(current.pid, current.startTimeTicks)))
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    if (await alive(current.pid, current.startTimeTicks))
+      throw new ControlRequestError({ code: "timeout", message: `daemon PID ${current.pid} survived SIGKILL` });
   }
-  const result = { state: "stopped" as const, pid: current };
+  const result = { state: "stopped" as const, pid: current.pid };
   if (emit) success(result, json, "result", "stop");
   return result;
 }
@@ -330,8 +365,8 @@ async function stop(json: boolean, emit = true): Promise<{ state: "not_running" 
 async function changePassword(password: string, json: boolean, generatedPassword?: string): Promise<void> {
   const config = await loadConfig();
   const passwordHash = await hashPassword(validateDashboardPassword(password));
-  const current = await pid();
-  const running = Boolean(current && (await alive(current)));
+  const current = await pidMetadata();
+  const running = Boolean(current && (await alive(current.pid, current.startTimeTicks)));
   if (running) await stop(json, false);
   await saveConfig({ ...config, passwordHash });
   if (running) {
@@ -553,10 +588,10 @@ async function main(): Promise<void> {
       return;
     }
     if (command === "status") {
-      const current = await pid();
-      const running = Boolean(current && (await alive(current)));
+      const current = await pidMetadata();
+      const running = Boolean(current && (await alive(current.pid, current.startTimeTicks)));
       success(
-        { state: running ? "running" : "not_running", ...(running ? { pid: current } : {}) },
+        { state: running ? "running" : "not_running", ...(running && current ? { pid: current.pid } : {}) },
         json,
         "result",
         "status",
