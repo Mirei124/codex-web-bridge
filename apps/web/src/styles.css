@@ -577,6 +577,53 @@ nav small {
   transform: none;
   box-shadow: none;
 }
+.queued-messages {
+  padding: 16px max(24px, calc((100% - 850px) / 2)) 0;
+  display: grid;
+  gap: 10px;
+}
+.queued-messages-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: #7b6b54;
+  font-size: 13px;
+  font-weight: 700;
+}
+.queued-messages-header strong {
+  color: var(--brown);
+  font-size: 15px;
+}
+.queued-messages-list {
+  display: grid;
+  gap: 10px;
+}
+.queued-message {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  background: #f4efe2;
+  border: 1.5px solid #d5c5aa;
+  border-radius: 18px;
+}
+.queued-message label {
+  display: inline-block;
+  margin-bottom: 4px;
+  color: #8b6810;
+  font-size: 12px;
+  font-weight: 900;
+}
+.queued-message p {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+.queued-message button {
+  flex-shrink: 0;
+}
 .empty {
   margin: auto;
   text-align: center;

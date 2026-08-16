@@ -102,6 +102,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  cancelQueuedMessage: (threadId: string, messageId: string) =>
+    request<void>(apiRoutes.cancelQueuedMessage(threadId, messageId), { method: "DELETE" }),
   interrupt: (id: string) =>
     request<void>(`${apiRoutes.threads}/${encodeURIComponent(id)}/interrupt`, { method: "POST" }),
   resolve: (id: string, requestId: string, body: ResolveRequest) =>

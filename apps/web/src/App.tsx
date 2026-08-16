@@ -887,6 +887,7 @@ export default function App() {
   const [interruptArmedThreadId, setInterruptArmedThreadId] = useState<string>();
   const [showScrollHint, setShowScrollHint] = useState(false);
   const [composerExpanded, setComposerExpanded] = useState(false);
+  const [cancellingQueuedMessageId, setCancellingQueuedMessageId] = useState<string>();
   const selectedId = useRef<string | undefined>(undefined);
   const viewRef = useRef(view);
   const threadsRef = useRef<ThreadSummary[]>([]);
@@ -1066,6 +1067,8 @@ export default function App() {
       );
       setSelected((old) => (old?.id === event.threadId ? { ...old, model: event.model } : old));
     }
+    if (event.type === "thread.queue.updated")
+      setSelected((old) => (old?.id === event.threadId ? { ...old, queuedMessages: event.queuedMessages } : old));
     if (event.type === "thread.deleted") {
       setThreads((old) => old.filter((t) => t.id !== event.threadId));
       setSelected((old) => (old?.id === event.threadId ? undefined : old));
@@ -1146,6 +1149,18 @@ export default function App() {
   async function send(event: FormEvent) {
     event.preventDefault();
     await submitDraft(false);
+  }
+  async function cancelQueuedMessage(messageId: string) {
+    if (!selected || cancellingQueuedMessageId) return;
+    setCancellingQueuedMessageId(messageId);
+    setOperationError("");
+    try {
+      await api.cancelQueuedMessage(selected.id, messageId);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : "取消排队失败");
+    } finally {
+      setCancellingQueuedMessageId((current) => (current === messageId ? undefined : current));
+    }
   }
   async function resolve(request: PendingRequest, value: ResolveRequest) {
     if (selected) await api.resolve(selected.id, request.requestId, value);
@@ -1387,6 +1402,32 @@ export default function App() {
                   <button className="attention-banner waiting" type="button" onClick={scrollConversationToLastMessage}>
                     需要你处理权限或输入请求
                   </button>
+                )}
+                {selected.queuedMessages.length > 0 && (
+                  <section className="queued-messages" aria-label="已排队消息">
+                    <div className="queued-messages-header">
+                      <strong>已排队消息</strong>
+                      <span>{selected.queuedMessages.length} 条待发送</span>
+                    </div>
+                    <div className="queued-messages-list">
+                      {selected.queuedMessages.map((message, index) => (
+                        <article key={message.id} className="queued-message">
+                          <div>
+                            <label>下一条 {index + 1}</label>
+                            <p>{message.text}</p>
+                          </div>
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={cancellingQueuedMessageId === message.id}
+                            onClick={() => void cancelQueuedMessage(message.id)}
+                          >
+                            {cancellingQueuedMessageId === message.id ? "取消中…" : "取消排队"}
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
                 )}
                 <div
                   className="conversation"

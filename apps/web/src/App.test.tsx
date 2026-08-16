@@ -63,6 +63,7 @@ const thread: ThreadDetail = {
   pendingRequests: [
     { kind: "approval", requestId: "approve-1", title: "运行命令", detail: "需要执行", command: "pnpm test" },
   ],
+  queuedMessages: [],
   terminal: { connected: true, takeover: false },
 };
 
@@ -540,6 +541,29 @@ describe("dashboard security and operations", () => {
       ),
     );
     await waitFor(() => expect(screen.queryByRole("heading", { name: "长文本输入" })).not.toBeInTheDocument());
+  });
+
+  it("renders queued messages and cancels a queued item", async () => {
+    const fetch = await openThread();
+    const socket = WebSocketStub.instances.at(-1)!;
+    socket.emit({
+      type: "thread.queue.updated",
+      threadId: "t",
+      queuedMessages: [
+        { id: "queued-1", text: "Next task", createdAt: "2026-01-01T00:00:00.000Z" },
+        { id: "queued-2", text: "Another task", createdAt: "2026-01-01T00:00:01.000Z" },
+      ],
+    });
+    expect(await screen.findByText("已排队消息")).toBeInTheDocument();
+    expect(screen.getByText("Next task")).toBeInTheDocument();
+    expect(screen.getByText("Another task")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "取消排队" })[0]!);
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/threads/t/queue/queued-1",
+        expect.objectContaining({ method: "DELETE" }),
+      ),
+    );
   });
 
   it("hides the action banner when all pending requests resolve", async () => {

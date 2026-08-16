@@ -221,6 +221,12 @@ export class ControlServer {
         text: stringParam(params, "text"),
         ...(params && typeof params === "object" && "queue" in params ? { queue: params.queue === true } : {}),
       });
+    if (method === "thread.queue.cancel")
+      return this.inject(
+        state,
+        "DELETE",
+        apiRoutes.cancelQueuedMessage(stringParam(params, "threadId"), stringParam(params, "messageId")),
+      );
     if (method === "thread.interrupt")
       return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/interrupt`);
     if (method === "thread.watch" || method === "thread.wait" || method === "terminal.watch") {

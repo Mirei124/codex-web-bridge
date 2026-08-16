@@ -147,7 +147,29 @@ describe("local control server", () => {
       await request(socketPath, "thread.send", { threadId: created.result.id, text: "queued", queue: true }),
     ).toMatchObject({
       ok: true,
-      result: { queued: true, position: 1 },
+      result: { queued: true, position: 1, queuedMessageId: expect.any(String) },
+    });
+    const detail = await request(socketPath, "thread.get", { threadId: created.result.id });
+    expect(detail).toMatchObject({
+      ok: true,
+      result: { queuedMessages: [{ id: expect.any(String), text: "queued", createdAt: expect.any(String) }] },
+    });
+    const queuedMessageId = detail.result.queuedMessages[0]!.id;
+    expect(
+      await request(socketPath, "thread.queue.cancel", {
+        threadId: created.result.id,
+        messageId: queuedMessageId,
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await request(socketPath, "thread.get", { threadId: created.result.id })).toMatchObject({
+      ok: true,
+      result: { queuedMessages: [] },
+    });
+    expect(
+      await request(socketPath, "thread.send", { threadId: created.result.id, text: "queued", queue: true }),
+    ).toMatchObject({
+      ok: true,
+      result: { queued: true, position: 1, queuedMessageId: expect.any(String) },
     });
     runtime.events.emit("event", {
       type: "codex",

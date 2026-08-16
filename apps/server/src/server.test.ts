@@ -489,13 +489,41 @@ it("wires authenticated thread operations to the runtime", async () => {
     payload: { text: "later", queue: true },
   });
   expect(queued.statusCode).toBe(200);
-  expect(queued.json()).toEqual({ queued: true, position: 1 });
+  expect(queued.json()).toMatchObject({ queued: true, position: 1, queuedMessageId: expect.any(String) });
+  const queuedMessageId = queued.json().queuedMessageId;
+  const threadDetail = await app.inject({ method: "GET", url: `/api/threads/${id}`, headers: { ...base, cookie } });
+  expect(threadDetail.statusCode).toBe(200);
+  expect(threadDetail.json().queuedMessages).toEqual([
+    { id: queuedMessageId, text: "later", createdAt: expect.any(String) },
+  ]);
+  expect(emitted).toContainEqual({
+    type: "thread.queue.updated",
+    threadId: id,
+    queuedMessages: [{ id: queuedMessageId, text: "later", createdAt: expect.any(String) }],
+  });
+  expect(
+    (await app.inject({ method: "DELETE", url: `/api/threads/${id}/queue/${queuedMessageId}`, headers })).statusCode,
+  ).toBe(204);
+  const afterCancel = await app.inject({ method: "GET", url: `/api/threads/${id}`, headers: { ...base, cookie } });
+  expect(afterCancel.json().queuedMessages).toEqual([]);
+  const queuedAgain = await app.inject({
+    method: "POST",
+    url: `/api/threads/${id}/messages`,
+    headers,
+    payload: { text: "later", queue: true },
+  });
+  expect(queuedAgain.statusCode).toBe(200);
   runtime.events.emit("event", {
     type: "codex",
     threadId: id,
     payload: { method: "turn/completed", params: { turn: { status: "completed" } } },
   });
   expect(runtime.sentMessages).toEqual(["hi", "later"]);
+  expect(emitted.filter((event) => event.type === "thread.queue.updated" && event.threadId === id).at(-1)).toEqual({
+    type: "thread.queue.updated",
+    threadId: id,
+    queuedMessages: [],
+  });
   expect((await app.inject({ method: "POST", url: `/api/threads/${id}/interrupt`, headers })).statusCode).toBe(204);
   expect(
     (

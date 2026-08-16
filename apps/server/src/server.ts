@@ -11,6 +11,7 @@ import {
   apiRoutes,
   serverEventThreadId,
   type PendingRequest,
+  type QueuedMessage,
   type SaveThreadCreateDefaultsRequest,
   type ServerEvent,
   type SettingsResponse,
@@ -98,7 +99,7 @@ function summary(thread: ThreadRecord): ThreadSummary {
     updatedAt: new Date(thread.updatedAt).toISOString(),
   };
 }
-function detail(storage: Storage, thread: ThreadRecord): ThreadDetail {
+function detail(storage: Storage, thread: ThreadRecord, queuedMessages: QueuedMessage[] = []): ThreadDetail {
   return {
     ...summary(thread),
     messages: storage.messages(thread.id).map((m) => ({
@@ -109,6 +110,7 @@ function detail(storage: Storage, thread: ThreadRecord): ThreadDetail {
       createdAt: new Date(m.createdAt).toISOString(),
     })),
     pendingRequests: storage.pending(thread.id).map((p) => JSON.parse(p.payload) as PendingRequest),
+    queuedMessages,
     terminal: { connected: thread.status !== "exited" && thread.hasRollout !== 0, takeover: false },
   };
 }
@@ -291,8 +293,19 @@ export async function buildServer(
   const hostKeyVerifier = options.hostKeyVerifier ?? verifyHostKey;
   const takeover = new Map<string, { owner: string; expiresAt?: number }>();
   const publishedModels = new Map<string, string>();
-  const queuedMessages = new Map<string, string[]>();
+  const queuedMessages = new Map<string, QueuedMessage[]>();
   const drainingQueues = new Set<string>();
+  function queuedThreadMessages(threadId: string): QueuedMessage[] {
+    return [...(queuedMessages.get(threadId) ?? [])];
+  }
+  function publishQueuedMessages(threadId: string) {
+    publish({ type: "thread.queue.updated", threadId, queuedMessages: queuedThreadMessages(threadId) });
+  }
+  function clearQueuedMessages(threadId: string) {
+    if (!queuedMessages.has(threadId)) return;
+    queuedMessages.delete(threadId);
+    publishQueuedMessages(threadId);
+  }
   function activeLease(threadId: string) {
     const lease = takeover.get(threadId);
     if (lease?.expiresAt !== undefined && lease.expiresAt <= Date.now()) {
@@ -555,7 +568,7 @@ export async function buildServer(
   app.get<{ Params: { id: string } }>(`${apiRoutes.threads}/:id`, async (request, reply) => {
     const thread = storage.thread(request.params.id);
     if (!thread) return reply.code(404).send({ error: "not found" });
-    const result = detail(storage, thread),
+    const result = detail(storage, thread, queuedThreadMessages(thread.id)),
       lease = activeLease(thread.id),
       owner = lease?.owner;
     result.terminal = {
@@ -613,7 +626,7 @@ export async function buildServer(
       clearThreadError(storage, id, "idle", { codexThreadId });
       publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
       return reply.code(201).send({
-        ...detail(storage, storage.thread(id)!),
+        ...detail(storage, storage.thread(id)!, queuedThreadMessages(id)),
         model: typeof created === "string" ? undefined : created.model,
       });
     } catch (error) {
@@ -662,7 +675,10 @@ export async function buildServer(
         const resumed = await runtime.resume(host, thread, request.body.codexThreadId);
         clearThreadError(storage, id, "idle");
         publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
-        return reply.code(201).send({ ...detail(storage, storage.thread(id)!), model: resumed?.model });
+        return reply.code(201).send({
+          ...detail(storage, storage.thread(id)!, queuedThreadMessages(id)),
+          model: resumed?.model,
+        });
       } catch (error) {
         setThreadError(storage, id, "startup_failed", errorMessage(error));
         publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
@@ -680,7 +696,7 @@ export async function buildServer(
     const thread = withThread(request.params.id);
     await runtime.detach?.(thread.id);
     takeover.delete(thread.id);
-    queuedMessages.delete(thread.id);
+    clearQueuedMessages(thread.id);
     storage.deleteThread(thread.id);
     publish({ type: "thread.deleted", threadId: thread.id });
     return reply.code(204).send();
@@ -690,7 +706,7 @@ export async function buildServer(
       host = storage.host(thread.hostId);
     if (!host) return reply.code(409).send({ error: "thread host no longer exists" });
     await runtime.exit(thread, host);
-    queuedMessages.delete(thread.id);
+    clearQueuedMessages(thread.id);
     storage.updateThread(thread.id, { status: "exited", updatedAt: Date.now() });
     publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
     return reply.code(204).send();
@@ -715,7 +731,7 @@ export async function buildServer(
       await runtime.resume(host, resuming, resuming.codexThreadId!);
       clearThreadError(storage, thread.id, "idle");
       publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
-      return detail(storage, storage.thread(thread.id)!);
+      return detail(storage, storage.thread(thread.id)!, queuedThreadMessages(thread.id));
     } catch (error) {
       setThreadError(
         storage,
@@ -754,12 +770,28 @@ export async function buildServer(
           Boolean(queuedMessages.get(thread.id)?.length));
       if (shouldQueue) {
         const queue = queuedMessages.get(thread.id) ?? [];
-        queue.push(request.body.text);
+        const queuedMessage = { id: randomUUID(), text: request.body.text, createdAt: new Date(now).toISOString() };
+        queue.push(queuedMessage);
         queuedMessages.set(thread.id, queue);
-        return { queued: true, position: queue.length };
+        publishQueuedMessages(thread.id);
+        return { queued: true, position: queue.length, queuedMessageId: queuedMessage.id };
       }
       const turnId = await dispatchThreadMessage(thread, request.body.text);
       return { turnId };
+    },
+  );
+  app.delete<{ Params: { id: string; messageId: string } }>(
+    apiRoutes.cancelQueuedMessage(":id", ":messageId").replaceAll("%3A", ":"),
+    async (request, reply) => {
+      const thread = withThread(request.params.id);
+      const queue = queuedMessages.get(thread.id);
+      if (!queue?.length) return reply.code(404).send({ error: "queued message not found" });
+      const index = queue.findIndex((message) => message.id === request.params.messageId);
+      if (index < 0) return reply.code(404).send({ error: "queued message not found" });
+      queue.splice(index, 1);
+      if (queue.length === 0) queuedMessages.delete(thread.id);
+      publishQueuedMessages(thread.id);
+      return reply.code(204).send();
     },
   );
   app.post<{ Params: { id: string } }>(`${apiRoutes.threads}/:id/interrupt`, async (request, reply) => {
@@ -912,7 +944,12 @@ export async function buildServer(
           const thread = storage.thread(event.threadId);
           if (!thread) return;
           state.threads.add(event.threadId);
-          socket.send(JSON.stringify({ type: "snapshot", thread: detail(storage, thread) } satisfies ServerEvent));
+          socket.send(
+            JSON.stringify({
+              type: "snapshot",
+              thread: detail(storage, thread, queuedThreadMessages(thread.id)),
+            } satisfies ServerEvent),
+          );
           try {
             const ansi = await runtime.terminalSeed(thread);
             if (ansi)
@@ -971,16 +1008,17 @@ export async function buildServer(
         const pending = queuedMessages.get(threadId);
         const thread = storage.thread(threadId);
         if (!pending?.length || !thread) {
-          queuedMessages.delete(threadId);
+          clearQueuedMessages(threadId);
           return;
         }
         if (thread.status !== "idle" || storage.pending(threadId).length > 0) return;
-        const nextText = pending.shift()!;
+        const nextMessage = pending.shift()!;
         if (pending.length === 0) queuedMessages.delete(threadId);
+        publishQueuedMessages(threadId);
         try {
-          await dispatchThreadMessage(thread, nextText);
+          await dispatchThreadMessage(thread, nextMessage.text);
         } catch (error) {
-          queuedMessages.delete(threadId);
+          clearQueuedMessages(threadId);
           setThreadError(storage, threadId, "turn_failed", errorMessage(error), "idle");
           publish({ type: "thread.updated", thread: summary(storage.thread(threadId)!) });
           publish({ type: "error", threadId, message: errorMessage(error) });
@@ -1168,7 +1206,7 @@ export async function buildServer(
     }
   });
   runtime.events.on("reconnectFailed", ({ threadId }: { threadId: string }) => {
-    queuedMessages.delete(threadId);
+    clearQueuedMessages(threadId);
     setThreadError(storage, threadId, "reconnect_failed", "Unable to reconnect to the remote Codex runtime");
     const thread = storage.thread(threadId);
     if (thread) {
@@ -1177,7 +1215,7 @@ export async function buildServer(
     }
   });
   const invalidatePending = ({ threadId, reason }: { threadId: string; reason?: string }) => {
-    queuedMessages.delete(threadId);
+    clearQueuedMessages(threadId);
     for (const requestId of storage.resolveAllPending(threadId))
       publish({ type: "request.resolved", threadId, requestId });
     publish({

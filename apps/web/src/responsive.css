@@ -69,6 +69,15 @@
     padding: 16px 12px 20px;
     gap: 14px;
   }
+  .queued-messages {
+    padding: 16px 12px 0;
+  }
+  .queued-message {
+    flex-direction: column;
+  }
+  .queued-message button {
+    width: 100%;
+  }
   .conversation article.user {
     max-width: 92%;
   }

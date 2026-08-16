@@ -106,9 +106,16 @@ export interface QuestionsRequest {
 
 export type PendingRequest = ChoiceRequest | ApprovalRequest | InputRequest | QuestionsRequest;
 
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  createdAt: string;
+}
+
 export interface ThreadDetail extends ThreadSummary {
   messages: ChatMessage[];
   pendingRequests: PendingRequest[];
+  queuedMessages: QueuedMessage[];
   terminal: { connected: boolean; takeover: boolean; owner?: string };
 }
 
@@ -177,6 +184,7 @@ export interface TerminalSnapshotResponse {
 export type ServerEvent =
   | { type: "snapshot"; thread: ThreadDetail }
   | { type: "thread.updated"; thread: ThreadSummary }
+  | { type: "thread.queue.updated"; threadId: string; queuedMessages: QueuedMessage[] }
   | { type: "thread.model.updated"; threadId: string; model: string }
   | { type: "thread.deleted"; threadId: string }
   | { type: "message.created"; threadId: string; message: ChatMessage }
@@ -212,6 +220,7 @@ export const controlMethods = [
   "thread.exit",
   "thread.delete",
   "thread.send",
+  "thread.queue.cancel",
   "thread.interrupt",
   "thread.wait",
   "thread.watch",
@@ -265,6 +274,8 @@ export const apiRoutes = {
   threadCreateCwdHistory: "/api/preferences/thread-create/cwd-history",
   resumeThread: "/api/threads/resume",
   resumeExitedThread: (threadId: string) => `/api/threads/${encodeURIComponent(threadId)}/resume`,
+  cancelQueuedMessage: (threadId: string, messageId: string) =>
+    `/api/threads/${encodeURIComponent(threadId)}/queue/${encodeURIComponent(messageId)}`,
   events: "/api/events",
   hostCodexThreads: (hostId: string) => `/api/hosts/${encodeURIComponent(hostId)}/codex-threads`,
 } as const;

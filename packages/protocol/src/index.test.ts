@@ -7,4 +7,9 @@ describe("server event routing", () => {
       "thread-1",
     );
   });
+  it("routes queue updates by their direct thread id", () => {
+    expect(serverEventThreadId({ type: "thread.queue.updated", threadId: "thread-1", queuedMessages: [] })).toBe(
+      "thread-1",
+    );
+  });
 });
