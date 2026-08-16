@@ -823,7 +823,8 @@ nav small {
   grid-area: side;
   min-width: 0;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: flex-end;
 }
 .composer-actions {
   display: flex;
