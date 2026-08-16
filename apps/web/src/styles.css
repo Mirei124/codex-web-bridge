@@ -624,6 +624,22 @@ nav small {
 .queued-message button {
   flex-shrink: 0;
 }
+.chat-panel {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.chat-panel.composer-expanded .conversation,
+.chat-panel.composer-expanded .queued-messages,
+.chat-panel.composer-expanded .attention-banner,
+.chat-panel.composer-expanded .scroll-hint {
+  opacity: 0.08;
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+}
 .empty {
   margin: auto;
   text-align: center;
@@ -707,24 +723,72 @@ nav small {
   border-top: 2px dashed #d9cfb9;
   padding: 15px max(24px, calc((100% - 850px) / 2));
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 11px;
   background: rgba(247, 243, 223, 0.84);
+  position: relative;
+  z-index: 1;
+  transition:
+    inset 0.28s ease,
+    padding 0.28s ease,
+    border-radius 0.28s ease,
+    box-shadow 0.28s ease,
+    background-color 0.28s ease,
+    border-color 0.28s ease;
+}
+.composer.expanded {
+  position: absolute;
+  inset: 0;
+  border-top: 0;
+  padding: 22px max(24px, calc((100% - 920px) / 2)) 20px;
+  background: linear-gradient(180deg, rgba(251, 248, 233, 0.98), rgba(247, 243, 223, 0.98)), rgba(247, 243, 223, 0.98);
+  box-shadow: inset 0 0 0 1px rgba(123, 107, 84, 0.1);
+  border-radius: 0 0 28px 28px;
+}
+.composer-expanded-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.composer-expanded-header h2 {
+  margin: 0;
+  color: var(--brown);
+  font-size: 20px;
+}
+.composer-expanded-header p {
+  margin: 6px 0 0;
+  color: var(--muted);
 }
 .composer-tools {
   width: 100%;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   gap: 10px;
 }
 .composer textarea {
-  flex: 1;
+  width: 100%;
   resize: none;
   border-radius: 22px;
   padding: 13px 18px;
   min-height: 54px;
   max-height: 150px;
+  transition:
+    min-height 0.28s ease,
+    max-height 0.28s ease,
+    border-radius 0.28s ease,
+    padding 0.28s ease,
+    box-shadow 0.28s ease;
+}
+.composer.expanded textarea {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  border-radius: 26px;
+  padding: 18px 20px;
+  box-shadow: inset 0 0 0 1px rgba(121, 79, 39, 0.08);
 }
 .composer textarea:disabled {
   opacity: 0.62;
@@ -733,26 +797,7 @@ nav small {
   display: flex;
   gap: 8px;
   align-items: flex-end;
-}
-.composer-modal {
-  width: min(960px, 100%);
-}
-.composer-modal-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-}
-.composer-modal-heading p {
-  margin: 6px 0 0;
-  color: var(--muted);
-}
-.composer-modal textarea {
-  width: 100%;
-  min-height: min(60vh, 520px);
-  resize: vertical;
-  border-radius: 24px;
-  padding: 18px 20px;
+  justify-content: flex-end;
 }
 .request {
   border: 2px dashed #d4c4a8;

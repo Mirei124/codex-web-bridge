@@ -894,6 +894,7 @@ export default function App() {
   const threadStates = useRef(new Map<string, ThreadSummary["status"]>());
   const interruptTimer = useRef<number | undefined>(undefined);
   const conversationRef = useRef<HTMLDivElement>(null);
+  const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
   selectedId.current = selected?.id;
   viewRef.current = view;
   threadsRef.current = threads;
@@ -949,6 +950,11 @@ export default function App() {
     if (!selected || tab !== "chat") return;
     scrollConversationToLastMessage();
   }, [selected?.id, tab]);
+  useEffect(() => {
+    if (!composerExpanded) return;
+    composerTextareaRef.current?.focus();
+    composerTextareaRef.current?.setSelectionRange(draft.length, draft.length);
+  }, [composerExpanded, draft.length]);
   useEffect(() => {
     if (!selected || view !== "threads") return;
     const hash = `#${encodeURIComponent(selected.id)}`;
@@ -1397,7 +1403,7 @@ export default function App() {
               </div>
             )}
             {tab === "chat" ? (
-              <>
+              <div className={`chat-panel ${composerExpanded ? "composer-expanded" : ""}`}>
                 {selected.pendingRequests.length > 0 && (
                   <button className="attention-banner waiting" type="button" onClick={scrollConversationToLastMessage}>
                     需要你处理权限或输入请求
@@ -1454,19 +1460,26 @@ export default function App() {
                     有新回复，向下滑动查看
                   </button>
                 )}
-                <form className="composer" onSubmit={send}>
-                  <div className="composer-tools">
-                    <button
-                      type="button"
-                      className="secondary"
-                      disabled={composerDisabled}
-                      onClick={() => setComposerExpanded(true)}
-                    >
-                      全屏编辑
-                    </button>
-                  </div>
+                <form className={`composer ${composerExpanded ? "expanded" : ""}`} onSubmit={send}>
+                  {composerExpanded && (
+                    <div className="composer-expanded-header">
+                      <div>
+                        <h2>长文本输入</h2>
+                        <p>
+                          {codexGenerating
+                            ? "当前回答进行中；可直接发送，或排队追加下一条。"
+                            : "在这里编辑更长的消息。"}
+                        </p>
+                      </div>
+                      <button className="secondary" type="button" onClick={() => setComposerExpanded(false)}>
+                        收起
+                      </button>
+                    </div>
+                  )}
                   <textarea
+                    ref={composerTextareaRef}
                     disabled={composerDisabled}
+                    autoFocus={composerExpanded}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     placeholder={
@@ -1483,6 +1496,16 @@ export default function App() {
                       }
                     }}
                   />
+                  <div className="composer-tools">
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={composerDisabled}
+                      onClick={() => setComposerExpanded((value) => !value)}
+                    >
+                      {composerExpanded ? "退出全屏" : "全屏编辑"}
+                    </button>
+                  </div>
                   <div className="composer-actions">
                     {codexGenerating && (
                       <button type="button" className="danger" onClick={() => void interruptSelected()}>
@@ -1500,7 +1523,7 @@ export default function App() {
                     <button disabled={composerDisabled || !draft.trim()}>发送</button>
                   </div>
                 </form>
-              </>
+              </div>
             ) : (
               <div className="terminal-panel">
                 <div className="terminal-toolbar">
@@ -1558,53 +1581,6 @@ export default function App() {
             setNavigationOpen(false);
           }}
         />
-      )}
-      {composerExpanded && selected && (
-        <div className="modal-backdrop">
-          <section className="card modal composer-modal">
-            <div className="composer-modal-heading">
-              <div>
-                <h2>长文本输入</h2>
-                <p>{codexGenerating ? "当前回答进行中；可直接发送，或排队追加下一条。" : "在这里编辑更长的消息。"}</p>
-              </div>
-              <button className="secondary" type="button" onClick={() => setComposerExpanded(false)}>
-                收起
-              </button>
-            </div>
-            <textarea
-              autoFocus
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder={
-                selected.status === "exited"
-                  ? "该会话已退出"
-                  : selected.status === "error"
-                    ? "请先恢复或重新连接会话"
-                    : "继续对话…"
-              }
-            />
-            <div className="actions">
-              <button type="button" className="secondary" onClick={() => setComposerExpanded(false)}>
-                取消
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                disabled={composerDisabled || !draft.trim()}
-                onClick={() => void submitDraft(true)}
-              >
-                排队
-              </button>
-              <button
-                type="button"
-                disabled={composerDisabled || !draft.trim()}
-                onClick={() => void submitDraft(false)}
-              >
-                发送
-              </button>
-            </div>
-          </section>
-        </div>
       )}
       {hostDialog && (
         <HostDialog

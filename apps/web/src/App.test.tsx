@@ -525,15 +525,16 @@ describe("dashboard security and operations", () => {
     expect(screen.getByText("Ready")).toBeInTheDocument();
   });
 
-  it("opens the fullscreen composer and sends long text from the modal", async () => {
+  it("expands the composer inline and sends long text from the panel", async () => {
     const fetch = await openThread();
     fireEvent.click(screen.getByRole("button", { name: "全屏编辑" }));
-    const modal = await screen.findByRole("heading", { name: "长文本输入" });
-    const dialog = modal.closest(".composer-modal") as HTMLElement;
-    fireEvent.change(within(dialog).getByPlaceholderText("继续对话…"), {
+    const heading = await screen.findByRole("heading", { name: "长文本输入" });
+    const composer = heading.closest(".composer.expanded") as HTMLElement;
+    expect(composer).toBeTruthy();
+    fireEvent.change(within(composer).getByPlaceholderText("继续对话…"), {
       target: { value: "Long form message" },
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "发送" }));
+    fireEvent.click(within(composer).getByRole("button", { name: "发送" }));
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
         "/api/threads/t/messages",
