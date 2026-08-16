@@ -234,6 +234,29 @@ function clearThreadError(storage: Storage, threadId: string, status: ThreadSumm
   });
 }
 
+async function inspectPersistedThreads(storage: Storage, runtime: RuntimeManager): Promise<void> {
+  for (const thread of storage.threads().filter((item) => item.status !== "exited")) {
+    storage.resolveAllPending(thread.id);
+    const host = storage.host(thread.hostId);
+    if (!host) continue;
+    try {
+      const state = (await runtime.probe?.(host, thread)) ?? "reachable";
+      if (state === "reachable") {
+        setThreadError(
+          storage,
+          thread.id,
+          "reconnect_failed",
+          "Bridge restarted. The remote tmux and Codex app-server are still running; restore to reconnect.",
+        );
+      } else {
+        clearThreadError(storage, thread.id, "exited");
+      }
+    } catch (error) {
+      setThreadError(storage, thread.id, "reconnect_failed", `Unable to verify the remote runtime: ${errorMessage(error)}`);
+    }
+  }
+}
+
 export async function buildServer(
   config: AppConfig,
   storage: Storage,
@@ -1086,20 +1109,7 @@ export async function buildServer(
   runtime.events.on("connectionLost", invalidatePending);
   runtime.events.on("generationChanged", invalidatePending);
   runtime.events.on("connectionGenerationChanged", invalidatePending);
-  for (const thread of storage.threads().filter((thread) => thread.status !== "exited")) {
-    const host = storage.host(thread.hostId);
-    if (host)
-      runtime
-        .reconnect(host, thread)
-        .catch((error) =>
-          storage.updateThread(thread.id, {
-            status: "error",
-            lastError: errorMessage(error),
-            lastErrorKind: "reconnect_failed",
-            updatedAt: Date.now(),
-          }),
-        );
-  }
+  await inspectPersistedThreads(storage, runtime);
   app.addHook("onClose", async () => {
     for (const socket of sockets.keys()) socket.close();
     wss.close();

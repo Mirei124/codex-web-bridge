@@ -27,6 +27,9 @@ class FakeRuntime implements RuntimeManager {
     return "codex-thread";
   }
   async resume() {}
+  async probe() {
+    return "reachable" as const;
+  }
   async reconnect() {}
   async exit() {}
   async send() {

@@ -24,6 +24,7 @@ export interface RuntimeManager {
   ensureWorkingDirectory?(host: HostRecord, cwd: string, create: boolean): Promise<boolean>;
   create(host: HostRecord, thread: ThreadRecord): Promise<string | { id: string; model?: string }>;
   resume(host: HostRecord, thread: ThreadRecord, codexThreadId: string): Promise<void | { model?: string }>;
+  probe?(host: HostRecord, thread: ThreadRecord): Promise<"reachable" | "missing">;
   reconnect(host: HostRecord, thread: ThreadRecord): Promise<void>;
   detach?(threadId: string): Promise<void>;
   exit(thread: ThreadRecord, host?: HostRecord): Promise<void>;
@@ -163,6 +164,21 @@ export class HostRuntimeManager implements RuntimeManager {
     } catch (error) {
       await this.dispose(active, { stopTmux: active.tmuxCreated && !this.detached.has(thread.id) });
       throw error;
+    }
+  }
+  async probe(host: HostRecord, thread: ThreadRecord): Promise<"reachable" | "missing"> {
+    if (!thread.remotePort) return "missing";
+    const ssh = await this.createSsh(host);
+    try {
+      await ssh.connect();
+      const runtime =
+        this.options.runtimeFactory?.(ssh) ??
+        new TmuxCodexRuntime(withPrependedPath(ssh, combinedPrependPath(host, thread)));
+      await runtime.checkPrerequisites();
+      if (!(await runtime.exists(thread.tmuxSession))) return "missing";
+      return (await ssh.probeTcp?.("127.0.0.1", thread.remotePort)) ? "reachable" : "missing";
+    } finally {
+      ssh.close();
     }
   }
   async reconnect(host: HostRecord, thread: ThreadRecord): Promise<void> {

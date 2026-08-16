@@ -208,6 +208,8 @@ class FakeRuntime implements RuntimeManager {
   resolutions: Array<{ requestId: string | number; value: unknown }> = [];
   failExit = false;
   historicalThreads: Array<{ id: string; title?: string; cwd?: string; updatedAt?: string }> = [];
+  probeResults = new Map<number, "reachable" | "missing">();
+  probeError: Error | undefined;
   directoryExists = true;
   directoryChecks: Array<{ cwd: string; create: boolean }> = [];
   async ensureWorkingDirectory(_host: unknown, cwd: string, create: boolean) {
@@ -220,6 +222,11 @@ class FakeRuntime implements RuntimeManager {
   }
   async resume() {
     this.calls.push("resume");
+  }
+  async probe(_host: unknown, thread: { remotePort?: number }) {
+    this.calls.push(`probe:${thread.remotePort}`);
+    if (this.probeError) throw this.probeError;
+    return this.probeResults.get(thread.remotePort ?? -1) ?? "reachable";
   }
   async reconnect(_host: unknown, thread: { remotePort?: number }) {
     this.calls.push(`reconnect:${thread.remotePort}`);
@@ -298,6 +305,7 @@ it("deletes only hosts without bridge-managed threads", async () => {
     storage,
     { runtime, webRoot: false },
   );
+  storage.updateThread("thread", { status: "idle", lastError: null, lastErrorKind: null, updatedAt: Date.now() });
   const base = { "x-forwarded-proto": "https", origin: "https://bridge.example" },
     login = await app.inject({
       method: "POST",
@@ -512,6 +520,7 @@ it("keeps a thread active when the remote tmux cannot be stopped", async () => {
     storage,
     { runtime, webRoot: false },
   );
+  storage.updateThread("thread", { status: "idle", lastError: null, lastErrorKind: null, updatedAt: Date.now() });
   const base = { "x-forwarded-proto": "https", origin: "https://bridge.example" },
     login = await app.inject({
       method: "POST",
@@ -529,7 +538,7 @@ it("keeps a thread active when the remote tmux cannot be stopped", async () => {
   expect(result.statusCode).toBe(500);
   expect(storage.thread("thread")?.status).toBe("idle");
 });
-it("reconnects a persisted active thread on its original remote port", async () => {
+it("probes persisted threads on startup without auto-reconnecting them", async () => {
   storage = new Storage(":memory:");
   storage.upsertHost({
     id: "host",
@@ -542,18 +551,41 @@ it("reconnects a persisted active thread on its original remote port", async () 
     createdAt: 1,
   });
   storage.createThread({
-    id: "thread",
+    id: "reachable",
     hostId: "host",
     codexThreadId: "codex",
     tmuxSession: "cwb-thread",
     remotePort: 45678,
     workingDirectory: "/work",
-    title: "thread",
+    title: "reachable",
+    status: "waiting",
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  storage.putPending({
+    id: "stale-request",
+    threadId: "reachable",
+    payload: "{}",
+    rpcId: "1",
+    method: "item/tool/requestUserInput",
+    params: "{}",
+    createdAt: 1,
+  });
+  storage.createThread({
+    id: "missing",
+    hostId: "host",
+    codexThreadId: "codex-2",
+    tmuxSession: "cwb-missing",
+    remotePort: 45679,
+    workingDirectory: "/gone",
+    title: "missing",
     status: "idle",
     createdAt: 1,
     updatedAt: 1,
   });
   const runtime = new FakeRuntime();
+  runtime.probeResults.set(45678, "reachable");
+  runtime.probeResults.set(45679, "missing");
   app = await buildServer(
     {
       version: 1,
@@ -567,8 +599,18 @@ it("reconnects a persisted active thread on its original remote port", async () 
     storage,
     { runtime, webRoot: false },
   );
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  expect(runtime.calls).toContain("reconnect:45678");
+  expect(runtime.calls).toEqual(["probe:45678", "probe:45679"]);
+  expect(storage.thread("reachable")).toMatchObject({
+    status: "error",
+    lastErrorKind: "reconnect_failed",
+    lastError: expect.stringContaining("Bridge restarted."),
+  });
+  expect(storage.thread("missing")).toMatchObject({
+    status: "exited",
+    lastError: null,
+    lastErrorKind: null,
+  });
+  expect(storage.pending("reachable")).toEqual([]);
 });
 it("expires pending RPC callbacks when the runtime connection generation changes", async () => {
   storage = new Storage(":memory:");
@@ -662,6 +704,21 @@ it("maps session-scoped approval responses to Codex RPC results", async () => {
     createdAt: 1,
     updatedAt: 1,
   });
+  const runtime = new FakeRuntime();
+  app = await buildServer(
+    {
+      version: 1,
+      bindHost: "127.0.0.1",
+      port: 3210,
+      publicOrigin: "https://bridge.example",
+      passwordHash: await hashPassword("correct horse battery staple"),
+      sessionSecret: "x".repeat(32),
+      trustedProxy: "127.0.0.1",
+    },
+    storage,
+    { runtime, webRoot: false },
+  );
+  storage.updateThread("thread", { status: "waiting", lastError: null, lastErrorKind: null, updatedAt: Date.now() });
   storage.putPending({
     id: "permissions",
     threadId: "thread",
@@ -680,20 +737,6 @@ it("maps session-scoped approval responses to Codex RPC results", async () => {
     params: "{}",
     createdAt: 2,
   });
-  const runtime = new FakeRuntime();
-  app = await buildServer(
-    {
-      version: 1,
-      bindHost: "127.0.0.1",
-      port: 3210,
-      publicOrigin: "https://bridge.example",
-      passwordHash: await hashPassword("correct horse battery staple"),
-      sessionSecret: "x".repeat(32),
-      trustedProxy: "127.0.0.1",
-    },
-    storage,
-    { runtime, webRoot: false },
-  );
   const base = { "x-forwarded-proto": "https", origin: "https://bridge.example" },
     login = await app.inject({
       method: "POST",
@@ -833,6 +876,21 @@ it("maps MCP elicitation responses to Codex RPC results", async () => {
     createdAt: 1,
     updatedAt: 1,
   });
+  const runtime = new FakeRuntime();
+  app = await buildServer(
+    {
+      version: 1,
+      bindHost: "127.0.0.1",
+      port: 3210,
+      publicOrigin: "https://bridge.example",
+      passwordHash: await hashPassword("correct horse battery staple"),
+      sessionSecret: "x".repeat(32),
+      trustedProxy: "127.0.0.1",
+    },
+    storage,
+    { runtime, webRoot: false },
+  );
+  storage.updateThread("thread", { status: "waiting", lastError: null, lastErrorKind: null, updatedAt: Date.now() });
   storage.putPending({
     id: "mcp-form",
     threadId: "thread",
@@ -851,20 +909,6 @@ it("maps MCP elicitation responses to Codex RPC results", async () => {
     }),
     createdAt: 1,
   });
-  const runtime = new FakeRuntime();
-  app = await buildServer(
-    {
-      version: 1,
-      bindHost: "127.0.0.1",
-      port: 3210,
-      publicOrigin: "https://bridge.example",
-      passwordHash: await hashPassword("correct horse battery staple"),
-      sessionSecret: "x".repeat(32),
-      trustedProxy: "127.0.0.1",
-    },
-    storage,
-    { runtime, webRoot: false },
-  );
   const base = { "x-forwarded-proto": "https", origin: "https://bridge.example" },
     login = await app.inject({
       method: "POST",
