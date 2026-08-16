@@ -817,9 +817,15 @@ nav small {
 .composer-side .composer-actions {
   width: 100%;
 }
-.composer-side .composer-tools button,
-.composer-side .composer-actions button {
+.composer-side .composer-tools button {
   width: 100%;
+}
+.composer-side .composer-actions {
+  justify-content: stretch;
+}
+.composer-side .composer-actions button {
+  flex: 1 1 0;
+  min-width: 0;
 }
 .composer.expanded .composer-side {
   min-width: 0;
@@ -828,9 +834,11 @@ nav small {
 .composer.expanded .composer-actions {
   width: auto;
 }
-.composer.expanded .composer-tools button,
-.composer.expanded .composer-actions button {
+.composer.expanded .composer-tools button {
   width: auto;
+}
+.composer.expanded .composer-actions button {
+  flex: 0 0 auto;
 }
 .request {
   border: 2px dashed #d4c4a8;
