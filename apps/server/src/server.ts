@@ -86,6 +86,7 @@ function summary(thread: ThreadRecord): ThreadSummary {
     proxy: thread.proxy,
     prependPath: thread.prependPath,
     status: thread.status as ThreadSummary["status"],
+    ...(thread.lastError ? { lastError: thread.lastError } : {}),
     updatedAt: new Date(thread.updatedAt).toISOString(),
   };
 }
@@ -198,6 +199,10 @@ function mcpElicitationResponse(
     }
   }
   return { action: body.approved === true ? "accept" : "decline", content: null, _meta: null };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export async function buildServer(
@@ -532,6 +537,7 @@ export async function buildServer(
       storage.updateThread(id, {
         codexThreadId,
         status: "idle",
+        lastError: null,
         updatedAt: Date.now(),
       });
       publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
@@ -540,7 +546,7 @@ export async function buildServer(
         model: typeof created === "string" ? undefined : created.model,
       });
     } catch (error) {
-      storage.updateThread(id, { status: "error", updatedAt: Date.now() });
+      storage.updateThread(id, { status: "error", lastError: errorMessage(error), updatedAt: Date.now() });
       publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
       throw error;
     }
@@ -577,11 +583,11 @@ export async function buildServer(
       storage.createThread(thread);
       try {
         const resumed = await runtime.resume(host, thread, request.body.codexThreadId);
-        storage.updateThread(id, { status: "idle", updatedAt: Date.now() });
+        storage.updateThread(id, { status: "idle", lastError: null, updatedAt: Date.now() });
         publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
         return reply.code(201).send({ ...detail(storage, storage.thread(id)!), model: resumed?.model });
       } catch (error) {
-        storage.updateThread(id, { status: "error", updatedAt: Date.now() });
+        storage.updateThread(id, { status: "error", lastError: errorMessage(error), updatedAt: Date.now() });
         publish({ type: "thread.updated", thread: summary(storage.thread(id)!) });
         throw error;
       }
@@ -619,16 +625,17 @@ export async function buildServer(
     storage.updateThread(thread.id, {
       remotePort: allocatePort(storage, host.id),
       status: "connecting",
+      lastError: null,
       updatedAt: Date.now(),
     });
     const resuming = storage.thread(thread.id)!;
     try {
       await runtime.resume(host, resuming, resuming.codexThreadId!);
-      storage.updateThread(thread.id, { status: "idle", updatedAt: Date.now() });
+      storage.updateThread(thread.id, { status: "idle", lastError: null, updatedAt: Date.now() });
       publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
       return detail(storage, storage.thread(thread.id)!);
     } catch (error) {
-      storage.updateThread(thread.id, { status: "exited", updatedAt: Date.now() });
+      storage.updateThread(thread.id, { status: "exited", lastError: errorMessage(error), updatedAt: Date.now() });
       publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
       throw error;
     }
@@ -652,7 +659,7 @@ export async function buildServer(
       });
       publish({ type: "message.created", threadId: thread.id, message });
       const turnId = await runtime.send(thread, request.body.text);
-      storage.updateThread(thread.id, { status: "running", hasRollout: 1, updatedAt: now });
+      storage.updateThread(thread.id, { status: "running", lastError: null, hasRollout: 1, updatedAt: now });
       publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
       publish({
         type: "terminal.state",
@@ -703,7 +710,7 @@ export async function buildServer(
     storage.resolvePending(request.params.requestId, thread.id);
     publish({ type: "request.resolved", threadId: thread.id, requestId: request.params.requestId });
     if (storage.pending(thread.id).length === 0 && storage.thread(thread.id)?.status === "waiting") {
-      storage.updateThread(thread.id, { status: "running", updatedAt: Date.now() });
+      storage.updateThread(thread.id, { status: "running", lastError: null, updatedAt: Date.now() });
       publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
     }
     return reply.code(204).send();
@@ -934,7 +941,7 @@ export async function buildServer(
       return;
     }
     if (method === "turn/started") {
-      storage.updateThread(event.threadId, { status: "running", updatedAt: now });
+      storage.updateThread(event.threadId, { status: "running", lastError: null, updatedAt: now });
       const thread = storage.thread(event.threadId);
       if (thread) publish({ type: "thread.updated", thread: summary(thread) });
       return;
@@ -942,6 +949,7 @@ export async function buildServer(
     if (method === "turn/completed") {
       storage.updateThread(event.threadId, {
         status: params.turn?.status === "failed" ? "error" : "idle",
+        lastError: params.turn?.status === "failed" ? String(params.turn?.error?.message ?? params.turn?.error ?? "Codex turn failed") : null,
         updatedAt: now,
       });
       const thread = storage.thread(event.threadId);
@@ -1012,7 +1020,11 @@ export async function buildServer(
     }
   });
   runtime.events.on("reconnectFailed", ({ threadId }: { threadId: string }) => {
-    storage.updateThread(threadId, { status: "error", updatedAt: Date.now() });
+    storage.updateThread(threadId, {
+      status: "error",
+      lastError: "Unable to reconnect to the remote Codex runtime",
+      updatedAt: Date.now(),
+    });
     const thread = storage.thread(threadId);
     if (thread) {
       publish({ type: "thread.updated", thread: summary(thread) });
@@ -1036,7 +1048,13 @@ export async function buildServer(
     if (host)
       runtime
         .reconnect(host, thread)
-        .catch(() => storage.updateThread(thread.id, { status: "error", updatedAt: Date.now() }));
+        .catch((error) =>
+          storage.updateThread(thread.id, {
+            status: "error",
+            lastError: errorMessage(error),
+            updatedAt: Date.now(),
+          }),
+        );
   }
   app.addHook("onClose", async () => {
     for (const socket of sockets.keys()) socket.close();

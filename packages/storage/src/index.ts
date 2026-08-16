@@ -47,6 +47,7 @@ export interface ThreadRecord {
   prependPath?: string;
   title: string;
   status: string;
+  lastError?: string;
   hasRollout?: number;
   createdAt: number;
   updatedAt: number;
@@ -105,7 +106,7 @@ export class Storage {
       CREATE TABLE IF NOT EXISTS threads (
         id TEXT PRIMARY KEY, host_id TEXT NOT NULL REFERENCES hosts(id),
         codex_thread_id TEXT, tmux_session TEXT NOT NULL UNIQUE, remote_port INTEGER,
-        working_directory TEXT NOT NULL, proxy TEXT, prepend_path TEXT, title TEXT NOT NULL, status TEXT NOT NULL, has_rollout INTEGER NOT NULL DEFAULT 0,
+        working_directory TEXT NOT NULL, proxy TEXT, prepend_path TEXT, title TEXT NOT NULL, status TEXT NOT NULL, last_error TEXT, has_rollout INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS threads_host_id ON threads(host_id);
@@ -149,6 +150,8 @@ export class Storage {
       this.db.exec("ALTER TABLE threads ADD COLUMN proxy TEXT");
     if (!threadColumns.some((column) => column.name === "prepend_path"))
       this.db.exec("ALTER TABLE threads ADD COLUMN prepend_path TEXT");
+    if (!threadColumns.some((column) => column.name === "last_error"))
+      this.db.exec("ALTER TABLE threads ADD COLUMN last_error TEXT");
     if (!threadColumns.some((column) => column.name === "has_rollout")) {
       this.db.exec("ALTER TABLE threads ADD COLUMN has_rollout INTEGER NOT NULL DEFAULT 0");
       this.db.exec(
@@ -230,21 +233,21 @@ export class Storage {
   threads(): ThreadRecord[] {
     return this.db
       .prepare(
-        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,status,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads ORDER BY updated_at DESC",
+        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,status,last_error AS lastError,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads ORDER BY updated_at DESC",
       )
       .all() as ThreadRecord[];
   }
   thread(id: string): ThreadRecord | undefined {
     return this.db
       .prepare(
-        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,status,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads WHERE id=?",
+        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,status,last_error AS lastError,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads WHERE id=?",
       )
       .get(id) as ThreadRecord | undefined;
   }
   createThread(thread: ThreadRecord): void {
     this.db
       .prepare(
-        "INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,prepend_path,title,status,has_rollout,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,prepend_path,title,status,last_error,has_rollout,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         thread.id,
@@ -257,6 +260,7 @@ export class Storage {
         thread.prependPath ?? null,
         thread.title,
         thread.status,
+        thread.lastError ?? null,
         thread.hasRollout ?? 0,
         thread.createdAt,
         thread.updatedAt,
@@ -268,18 +272,20 @@ export class Storage {
       codexThreadId?: string;
       remotePort?: number;
       status?: string;
+      lastError?: string | null;
       hasRollout?: number;
       updatedAt: number;
     },
   ): void {
     this.db
       .prepare(
-        "UPDATE threads SET codex_thread_id=COALESCE(?,codex_thread_id),remote_port=COALESCE(?,remote_port),status=COALESCE(?,status),has_rollout=COALESCE(?,has_rollout),updated_at=? WHERE id=?",
+        "UPDATE threads SET codex_thread_id=COALESCE(?,codex_thread_id),remote_port=COALESCE(?,remote_port),status=COALESCE(?,status),last_error=?,has_rollout=COALESCE(?,has_rollout),updated_at=? WHERE id=?",
       )
       .run(
         update.codexThreadId ?? null,
         update.remotePort ?? null,
         update.status ?? null,
+        update.lastError ?? null,
         update.hasRollout ?? null,
         update.updatedAt,
         id,

@@ -535,6 +535,26 @@ describe("dashboard security and operations", () => {
     expect(await screen.findByText(/\/repo · running/)).toBeInTheDocument();
   });
 
+  it("renders the thread error reason in the sidebar and detail header", async () => {
+    await openThread();
+    WebSocketStub.instances.at(-1)?.emit({
+      type: "thread.updated",
+      thread: {
+        id: "t",
+        hostId: "a",
+        title: "Bridge",
+        cwd: "/repo",
+        updatedAt: "2026-01-01",
+        status: "error",
+        lastError: "Unable to reconnect to the remote Codex runtime",
+      },
+    });
+    expect(
+      await screen.findByText("会话错误：Unable to reconnect to the remote Codex runtime"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/error · Unable to reconnect to the remote Codex runtime/)).not.toHaveLength(0);
+  });
+
   it("sends session scope for allow all approvals", async () => {
     const fetch = await openThread();
     fireEvent.click(screen.getByRole("button", { name: "全部允许" }));

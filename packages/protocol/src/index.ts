@@ -45,6 +45,7 @@ export interface ThreadSummary {
   prependPath?: string;
   model?: string;
   status: ThreadStatus;
+  lastError?: string;
   updatedAt: string;
 }
 

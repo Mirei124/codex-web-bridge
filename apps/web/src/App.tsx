@@ -28,6 +28,16 @@ function notificationProblem(): string | undefined {
   if (Notification.permission === "default") return "允许系统通知后，Codex 回答完成时可以在后台提醒你。";
 }
 
+function threadStatusLabel(thread: Pick<ThreadSummary, "status" | "lastError">): string {
+  if (thread.status !== "error") return thread.status;
+  return thread.lastError ? `error · ${thread.lastError}` : "error · 未提供失败原因";
+}
+
+function threadErrorSummary(thread: Pick<ThreadSummary, "status" | "lastError">): string | undefined {
+  if (thread.status !== "error") return;
+  return thread.lastError ?? "会话失败，但服务端没有返回更具体的错误原因。";
+}
+
 function Login({ onLogin }: { onLogin(): void }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -917,7 +927,7 @@ export default function App() {
         notifyUnreadThread(
           event.thread.id,
           event.thread.status === "error" ? "Codex 会话执行失败" : "Codex 已完成回答",
-          event.thread.title,
+          event.thread.status === "error" ? threadErrorSummary(event.thread) ?? event.thread.title : event.thread.title,
         );
       if (event.thread.status === "waiting")
         notifyUnreadThread(event.thread.id, "Codex 需要你操作", event.thread.title);
@@ -1149,7 +1159,7 @@ export default function App() {
               >
                 <span>{t.title}</span>
                 <small>
-                  {t.status} · {t.cwd}
+                  {threadStatusLabel(t)} · {t.cwd}
                 </small>
               </button>
               <button className="thread-delete" aria-label={`删除会话 ${t.title}`} onClick={() => void deleteThread(t)}>
@@ -1186,7 +1196,7 @@ export default function App() {
               <div>
                 <h1>{selected.title}</h1>
                 <p>
-                  {selected.cwd} · {selected.status}
+                  {selected.cwd} · {threadStatusLabel(selected)}
                   {selected.model ? ` · 模型：${selected.model}` : ""}
                 </p>
               </div>
@@ -1209,6 +1219,11 @@ export default function App() {
               </div>
             </header>
             {operationError && <div className="operation-error error">{operationError}</div>}
+            {selected.status === "error" && selected.lastError && (
+              <div className="operation-error error" role="alert">
+                会话错误：{selected.lastError}
+              </div>
+            )}
             {tab === "chat" ? (
               <>
                 {selected.pendingRequests.length > 0 && (
