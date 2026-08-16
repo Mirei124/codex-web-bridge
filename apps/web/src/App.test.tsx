@@ -549,9 +549,7 @@ describe("dashboard security and operations", () => {
         lastError: "Unable to reconnect to the remote Codex runtime",
       },
     });
-    expect(
-      await screen.findByText("会话错误：Unable to reconnect to the remote Codex runtime"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("会话错误：Unable to reconnect to the remote Codex runtime")).toBeInTheDocument();
     expect(screen.getAllByText(/error · Unable to reconnect to the remote Codex runtime/)).not.toHaveLength(0);
   });
 

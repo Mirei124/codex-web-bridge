@@ -228,7 +228,12 @@ function setThreadError(
   });
 }
 
-function clearThreadError(storage: Storage, threadId: string, status: ThreadSummary["status"], extra: Partial<ThreadRecord> = {}) {
+function clearThreadError(
+  storage: Storage,
+  threadId: string,
+  status: ThreadSummary["status"],
+  extra: Partial<ThreadRecord> = {},
+) {
   storage.updateThread(threadId, {
     status,
     lastError: null,
@@ -262,7 +267,12 @@ async function inspectPersistedThreads(
         clearThreadError(storage, thread.id, "exited");
       }
     } catch (error) {
-      setThreadError(storage, thread.id, "reconnect_failed", `Unable to verify the remote runtime: ${errorMessage(error)}`);
+      setThreadError(
+        storage,
+        thread.id,
+        "reconnect_failed",
+        `Unable to verify the remote runtime: ${errorMessage(error)}`,
+      );
     }
     const updated = storage.thread(thread.id);
     if (updated && publish) publish({ type: "thread.updated", thread: summary(updated) });
@@ -790,7 +800,12 @@ export async function buildServer(
     storage.resolvePending(request.params.requestId, thread.id);
     publish({ type: "request.resolved", threadId: thread.id, requestId: request.params.requestId });
     if (storage.pending(thread.id).length === 0 && storage.thread(thread.id)?.status === "waiting") {
-      storage.updateThread(thread.id, { status: "running", lastError: null, lastErrorKind: null, updatedAt: Date.now() });
+      storage.updateThread(thread.id, {
+        status: "running",
+        lastError: null,
+        lastErrorKind: null,
+        updatedAt: Date.now(),
+      });
       publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
     }
     return reply.code(204).send();
@@ -1030,7 +1045,9 @@ export async function buildServer(
       storage.updateThread(event.threadId, {
         status: "idle",
         lastError:
-          params.turn?.status === "failed" ? String(params.turn?.error?.message ?? params.turn?.error ?? "Codex turn failed") : null,
+          params.turn?.status === "failed"
+            ? String(params.turn?.error?.message ?? params.turn?.error ?? "Codex turn failed")
+            : null,
         lastErrorKind: params.turn?.status === "failed" ? "turn_failed" : null,
         updatedAt: now,
       });

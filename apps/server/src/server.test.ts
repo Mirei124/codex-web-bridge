@@ -246,10 +246,7 @@ it("does not block server startup on slow persisted-thread probes", async () => 
     { runtime, webRoot: false },
   );
   await expect(
-    Promise.race([
-      started,
-      new Promise<symbol>((resolve) => setTimeout(() => resolve(Symbol.for("timeout")), 50)),
-    ]),
+    Promise.race([started, new Promise<symbol>((resolve) => setTimeout(() => resolve(Symbol.for("timeout")), 50))]),
   ).resolves.not.toBe(Symbol.for("timeout"));
   app = await started;
 });

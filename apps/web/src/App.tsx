@@ -36,9 +36,10 @@ function notificationProblem(): string | undefined {
   if (Notification.permission === "default") return "允许系统通知后，Codex 回答完成时可以在后台提醒你。";
 }
 
-function threadStateSummary(
-  thread: Pick<ThreadSummary, "status" | "lastError" | "lastErrorKind">,
-): { label: string; detail?: string } {
+function threadStateSummary(thread: Pick<ThreadSummary, "status" | "lastError" | "lastErrorKind">): {
+  label: string;
+  detail?: string;
+} {
   if (thread.status === "error") {
     if (thread.lastErrorKind === "reconnect_failed")
       return { label: "连接已断开", detail: thread.lastError ?? "无法重新连接远端 Codex 运行时。" };
@@ -185,7 +186,7 @@ function CreateDialog({
   initialResume?: ResumeSeed;
 }) {
   const [hostId, setHostId] = useState(initialResume?.hostId ?? hosts[0]?.id ?? "");
-  const [cwd, setCwd] = useState(mode === "create" ? "" : initialResume?.cwd ?? "");
+  const [cwd, setCwd] = useState(mode === "create" ? "" : (initialResume?.cwd ?? ""));
   const [threadId, setThreadId] = useState(initialResume?.codexThreadId ?? "");
   const [proxy, setProxy] = useState(initialResume?.proxy ?? "");
   const [prependPath, setPrependPath] = useState(initialResume?.prependPath ?? "");
@@ -329,9 +330,7 @@ function CreateDialog({
                 ? { cwd: initialResume.cwd }
                 : {}),
         };
-        onDone(
-          await api.resumeThread(resumeValues),
-        );
+        onDone(await api.resumeThread(resumeValues));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "操作失败");
@@ -496,7 +495,11 @@ function CreateDialog({
               下一步
             </button>
           ) : (
-            <button disabled={loadingDefaults || submitting || !hostId || (mode === "create" ? !cwd.trim() : !threadId.trim())}>
+            <button
+              disabled={
+                loadingDefaults || submitting || !hostId || (mode === "create" ? !cwd.trim() : !threadId.trim())
+              }
+            >
               {loadingDefaults
                 ? "读取中…"
                 : submitting
@@ -1331,7 +1334,8 @@ export default function App() {
                 <button className={tab === "terminal" ? "" : "secondary"} onClick={() => setTab("terminal")}>
                   终端
                 </button>
-                {selected.status === "exited" || (selected.status === "error" && selected.lastErrorKind === "reconnect_failed") ? (
+                {selected.status === "exited" ||
+                (selected.status === "error" && selected.lastErrorKind === "reconnect_failed") ? (
                   <button disabled={resuming} onClick={() => void resumeSelected()}>
                     {resuming ? "恢复中…" : selected.status === "exited" ? "恢复会话" : "直接恢复连接"}
                   </button>

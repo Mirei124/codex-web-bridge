@@ -118,7 +118,10 @@ async function linuxStartTimeTicks(pid: number): Promise<string | undefined> {
     const stat = await readFile(`/proc/${pid}/stat`, "utf8");
     const close = stat.lastIndexOf(")");
     if (close < 0) return;
-    const fields = stat.slice(close + 2).trim().split(/\s+/);
+    const fields = stat
+      .slice(close + 2)
+      .trim()
+      .split(/\s+/);
     return fields[19];
   } catch (error) {
     if (["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) return;
