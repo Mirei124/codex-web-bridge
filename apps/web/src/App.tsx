@@ -1515,10 +1515,10 @@ export default function App() {
                           onClick={() => void interruptSelected()}
                         >
                           <span className="composer-interrupt-button-label">
-                            {interruptArmedThreadId === selected.id ? "再次点击中断" : "中断"}
+                            {interruptArmedThreadId === selected.id ? "确认中断" : "中断"}
                           </span>
                           <span className="composer-interrupt-button-sizer" aria-hidden="true">
-                            再次点击中断
+                            确认中断
                           </span>
                         </button>
                       )}

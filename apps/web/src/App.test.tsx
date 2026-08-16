@@ -502,7 +502,7 @@ describe("dashboard security and operations", () => {
     await screen.findByRole("button", { name: "中断" });
     fireEvent.click(screen.getByRole("button", { name: "中断" }));
     expect(fetch.mock.calls.some((call) => call[0] === "/api/threads/t/interrupt")).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "再次点击中断" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认中断" }));
     fireEvent.click(screen.getByRole("button", { name: "退出会话" }));
     await waitFor(() => {
       const paths = fetch.mock.calls.map((call) => [call[0], (call[1] as RequestInit | undefined)?.method]);
