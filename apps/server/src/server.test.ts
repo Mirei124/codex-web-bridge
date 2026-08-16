@@ -254,6 +254,7 @@ it("does not block server startup on slow persisted-thread probes", async () => 
 class FakeRuntime implements RuntimeManager {
   events = new EventEmitter();
   calls: string[] = [];
+  sentMessages: string[] = [];
   resolutions: Array<{ requestId: string | number; value: unknown }> = [];
   failExit = false;
   historicalThreads: Array<{ id: string; title?: string; cwd?: string; updatedAt?: string }> = [];
@@ -287,8 +288,9 @@ class FakeRuntime implements RuntimeManager {
     this.calls.push(`exit:${host?.id}`);
     if (this.failExit) throw new Error("tmux stop failed");
   }
-  async send() {
+  async send(_thread: unknown, text: string) {
     this.calls.push("send");
+    this.sentMessages.push(text);
     return "turn-1";
   }
   async interrupt() {
@@ -480,6 +482,20 @@ it("wires authenticated thread operations to the runtime", async () => {
   });
   expect(sent.statusCode).toBe(200);
   expect(sent.json()).toEqual({ turnId: "turn-1" });
+  const queued = await app.inject({
+    method: "POST",
+    url: `/api/threads/${id}/messages`,
+    headers,
+    payload: { text: "later", queue: true },
+  });
+  expect(queued.statusCode).toBe(200);
+  expect(queued.json()).toEqual({ queued: true, position: 1 });
+  runtime.events.emit("event", {
+    type: "codex",
+    threadId: id,
+    payload: { method: "turn/completed", params: { turn: { status: "completed" } } },
+  });
+  expect(runtime.sentMessages).toEqual(["hi", "later"]);
   expect((await app.inject({ method: "POST", url: `/api/threads/${id}/interrupt`, headers })).statusCode).toBe(204);
   expect(
     (

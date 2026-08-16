@@ -524,6 +524,41 @@ describe("dashboard security and operations", () => {
     expect(screen.getByText("Ready")).toBeInTheDocument();
   });
 
+  it("queues the next message with the Tab shortcut while Codex is generating", async () => {
+    const fetch = await openThread();
+    WebSocketStub.instances.at(-1)?.emit({
+      type: "thread.updated",
+      thread: { id: "t", hostId: "a", title: "Bridge", cwd: "/repo", updatedAt: "2026-01-01", status: "running" },
+    });
+    const composer = screen.getByPlaceholderText("继续对话…");
+    fireEvent.change(composer, { target: { value: "Queue this" } });
+    fireEvent.keyDown(composer, { key: "Tab" });
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/threads/t/messages",
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ text: "Queue this", queue: true }) }),
+      ),
+    );
+  });
+
+  it("opens the fullscreen composer and sends long text from the modal", async () => {
+    const fetch = await openThread();
+    fireEvent.click(screen.getByRole("button", { name: "全屏编辑" }));
+    const modal = await screen.findByRole("heading", { name: "长文本输入" });
+    const dialog = modal.closest(".composer-modal") as HTMLElement;
+    fireEvent.change(within(dialog).getByPlaceholderText("继续对话…"), {
+      target: { value: "Long form message" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "发送" }));
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/threads/t/messages",
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ text: "Long form message" }) }),
+      ),
+    );
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "长文本输入" })).not.toBeInTheDocument());
+  });
+
   it("hides the action banner when all pending requests resolve", async () => {
     await openThread();
     expect(screen.getByText("需要你处理权限或输入请求")).toBeInTheDocument();

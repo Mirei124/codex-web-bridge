@@ -219,6 +219,7 @@ export class ControlServer {
     if (method === "thread.send")
       return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/messages`, {
         text: stringParam(params, "text"),
+        ...(params && typeof params === "object" && "queue" in params ? { queue: params.queue === true } : {}),
       });
     if (method === "thread.interrupt")
       return this.inject(state, "POST", `${apiRoutes.threads}/${encodeURIComponent(idParam(params))}/interrupt`);

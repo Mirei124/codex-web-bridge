@@ -291,6 +291,8 @@ export async function buildServer(
   const hostKeyVerifier = options.hostKeyVerifier ?? verifyHostKey;
   const takeover = new Map<string, { owner: string; expiresAt?: number }>();
   const publishedModels = new Map<string, string>();
+  const queuedMessages = new Map<string, string[]>();
+  const drainingQueues = new Set<string>();
   function activeLease(threadId: string) {
     const lease = takeover.get(threadId);
     if (lease?.expiresAt !== undefined && lease.expiresAt <= Date.now()) {
@@ -678,6 +680,7 @@ export async function buildServer(
     const thread = withThread(request.params.id);
     await runtime.detach?.(thread.id);
     takeover.delete(thread.id);
+    queuedMessages.delete(thread.id);
     storage.deleteThread(thread.id);
     publish({ type: "thread.deleted", threadId: thread.id });
     return reply.code(204).send();
@@ -687,6 +690,7 @@ export async function buildServer(
       host = storage.host(thread.hostId);
     if (!host) return reply.code(409).send({ error: "thread host no longer exists" });
     await runtime.exit(thread, host);
+    queuedMessages.delete(thread.id);
     storage.updateThread(thread.id, { status: "exited", updatedAt: Date.now() });
     publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
     return reply.code(204).send();
@@ -724,7 +728,7 @@ export async function buildServer(
       throw error;
     }
   });
-  app.post<{ Params: { id: string }; Body: { text: string } }>(
+  app.post<{ Params: { id: string }; Body: { text: string; queue?: boolean } }>(
     `${apiRoutes.threads}/:id/messages`,
     async (request, reply) => {
       if (typeof request.body.text !== "string" || !request.body.text.trim() || request.body.text.length > 100000)
@@ -742,21 +746,19 @@ export async function buildServer(
         createdAt: now,
       });
       publish({ type: "message.created", threadId: thread.id, message });
-      const turnId = await runtime.send(thread, request.body.text);
-      storage.updateThread(thread.id, {
-        status: "running",
-        lastError: null,
-        lastErrorKind: null,
-        hasRollout: 1,
-        updatedAt: now,
-      });
-      publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
-      publish({
-        type: "terminal.state",
-        threadId: thread.id,
-        connected: true,
-        takeover: Boolean(activeLease(thread.id)),
-      });
+      const shouldQueue =
+        request.body.queue === true &&
+        (thread.status === "running" ||
+          thread.status === "waiting" ||
+          storage.pending(thread.id).length > 0 ||
+          Boolean(queuedMessages.get(thread.id)?.length));
+      if (shouldQueue) {
+        const queue = queuedMessages.get(thread.id) ?? [];
+        queue.push(request.body.text);
+        queuedMessages.set(thread.id, queue);
+        return { queued: true, position: queue.length };
+      }
+      const turnId = await dispatchThreadMessage(thread, request.body.text);
       return { turnId };
     },
   );
@@ -943,6 +945,52 @@ export async function buildServer(
         socket.send(json);
       }
   }
+  async function dispatchThreadMessage(thread: ThreadRecord, text: string): Promise<string | undefined> {
+    const turnId = await runtime.send(thread, text);
+    storage.updateThread(thread.id, {
+      status: "running",
+      lastError: null,
+      lastErrorKind: null,
+      hasRollout: 1,
+      updatedAt: Date.now(),
+    });
+    publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
+    publish({
+      type: "terminal.state",
+      threadId: thread.id,
+      connected: true,
+      takeover: Boolean(activeLease(thread.id)),
+    });
+    return turnId;
+  }
+  async function drainQueuedMessages(threadId: string) {
+    if (drainingQueues.has(threadId)) return;
+    drainingQueues.add(threadId);
+    try {
+      while (true) {
+        const pending = queuedMessages.get(threadId);
+        const thread = storage.thread(threadId);
+        if (!pending?.length || !thread) {
+          queuedMessages.delete(threadId);
+          return;
+        }
+        if (thread.status !== "idle" || storage.pending(threadId).length > 0) return;
+        const nextText = pending.shift()!;
+        if (pending.length === 0) queuedMessages.delete(threadId);
+        try {
+          await dispatchThreadMessage(thread, nextText);
+        } catch (error) {
+          queuedMessages.delete(threadId);
+          setThreadError(storage, threadId, "turn_failed", errorMessage(error), "idle");
+          publish({ type: "thread.updated", thread: summary(storage.thread(threadId)!) });
+          publish({ type: "error", threadId, message: errorMessage(error) });
+          return;
+        }
+      }
+    } finally {
+      drainingQueues.delete(threadId);
+    }
+  }
   function releaseLeases(sessionId: string) {
     for (const [threadId, lease] of takeover)
       if (lease.owner === sessionId) {
@@ -1059,6 +1107,7 @@ export async function buildServer(
           threadId: event.threadId,
           message: String(params.turn.error.message ?? params.turn.error),
         });
+      void drainQueuedMessages(event.threadId);
       return;
     }
     const approvals = new Set([
@@ -1119,6 +1168,7 @@ export async function buildServer(
     }
   });
   runtime.events.on("reconnectFailed", ({ threadId }: { threadId: string }) => {
+    queuedMessages.delete(threadId);
     setThreadError(storage, threadId, "reconnect_failed", "Unable to reconnect to the remote Codex runtime");
     const thread = storage.thread(threadId);
     if (thread) {
@@ -1127,6 +1177,7 @@ export async function buildServer(
     }
   });
   const invalidatePending = ({ threadId, reason }: { threadId: string; reason?: string }) => {
+    queuedMessages.delete(threadId);
     for (const requestId of storage.resolveAllPending(threadId))
       publish({ type: "request.resolved", threadId, requestId });
     publish({

@@ -886,6 +886,7 @@ export default function App() {
   const [toast, setToast] = useState<string>();
   const [interruptArmedThreadId, setInterruptArmedThreadId] = useState<string>();
   const [showScrollHint, setShowScrollHint] = useState(false);
+  const [composerExpanded, setComposerExpanded] = useState(false);
   const selectedId = useRef<string | undefined>(undefined);
   const viewRef = useRef(view);
   const threadsRef = useRef<ThreadSummary[]>([]);
@@ -968,6 +969,7 @@ export default function App() {
     selected?.status === "running" || Boolean(selected?.messages.some((m) => m.role === "assistant" && m.streaming));
   const selectedState = selected ? threadStateSummary(selected) : undefined;
   const composerDisabled = selected?.status === "exited" || selected?.status === "error";
+  const queueShortcutEnabled = Boolean(codexGenerating && draft.trim());
   useEffect(() => {
     if (codexGenerating) return;
     setInterruptArmedThreadId(undefined);
@@ -1130,12 +1132,21 @@ export default function App() {
     if (!options.preserveHash) window.history.replaceState(null, "", `#${encodeURIComponent(thread.id)}`);
     setNavigationOpen(false);
   }
-  async function send(event: FormEvent) {
-    event.preventDefault();
+  async function submitDraft(queue = false) {
     if (!selected || !draft.trim()) return;
     const text = draft.trim();
     setDraft("");
-    await api.sendMessage(selected.id, { text });
+    if (!queue) setComposerExpanded(false);
+    try {
+      await api.sendMessage(selected.id, { text, ...(queue ? { queue: true } : {}) });
+    } catch (error) {
+      setDraft(text);
+      setOperationError(error instanceof Error ? error.message : queue ? "排队失败" : "发送失败");
+    }
+  }
+  async function send(event: FormEvent) {
+    event.preventDefault();
+    await submitDraft(false);
   }
   async function resolve(request: PendingRequest, value: ResolveRequest) {
     if (selected) await api.resolve(selected.id, request.requestId, value);
@@ -1404,6 +1415,17 @@ export default function App() {
                   </button>
                 )}
                 <form className="composer" onSubmit={send}>
+                  <div className="composer-tools">
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={composerDisabled}
+                      onClick={() => setComposerExpanded(true)}
+                    >
+                      全屏编辑
+                    </button>
+                    {queueShortcutEnabled && <span className="composer-hint">Tab 可追加为下一条</span>}
+                  </div>
                   <textarea
                     disabled={composerDisabled}
                     value={draft}
@@ -1416,18 +1438,31 @@ export default function App() {
                           : "继续对话…"
                     }
                     onKeyDown={(e) => {
+                      if (e.key === "Tab" && !e.shiftKey && queueShortcutEnabled) {
+                        e.preventDefault();
+                        void submitDraft(true);
+                        return;
+                      }
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         e.currentTarget.form?.requestSubmit();
                       }
                     }}
                   />
-                  <div>
+                  <div className="composer-actions">
                     {codexGenerating && (
                       <button type="button" className="danger" onClick={() => void interruptSelected()}>
                         {interruptArmedThreadId === selected.id ? "再次点击中断" : "中断"}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={composerDisabled || !draft.trim()}
+                      onClick={() => void submitDraft(true)}
+                    >
+                      排队
+                    </button>
                     <button disabled={composerDisabled || !draft.trim()}>发送</button>
                   </div>
                 </form>
@@ -1489,6 +1524,53 @@ export default function App() {
             setNavigationOpen(false);
           }}
         />
+      )}
+      {composerExpanded && selected && (
+        <div className="modal-backdrop">
+          <section className="card modal composer-modal">
+            <div className="composer-modal-heading">
+              <div>
+                <h2>长文本输入</h2>
+                <p>{codexGenerating ? "当前回答进行中；可直接发送，或排队追加下一条。" : "在这里编辑更长的消息。"}</p>
+              </div>
+              <button className="secondary" type="button" onClick={() => setComposerExpanded(false)}>
+                收起
+              </button>
+            </div>
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder={
+                selected.status === "exited"
+                  ? "该会话已退出"
+                  : selected.status === "error"
+                    ? "请先恢复或重新连接会话"
+                    : "继续对话…"
+              }
+            />
+            <div className="actions">
+              <button type="button" className="secondary" onClick={() => setComposerExpanded(false)}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={composerDisabled || !draft.trim()}
+                onClick={() => void submitDraft(true)}
+              >
+                排队
+              </button>
+              <button
+                type="button"
+                disabled={composerDisabled || !draft.trim()}
+                onClick={() => void submitDraft(false)}
+              >
+                发送
+              </button>
+            </div>
+          </section>
+        </div>
       )}
       {hostDialog && (
         <HostDialog

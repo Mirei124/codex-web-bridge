@@ -79,8 +79,23 @@
     padding: 11px 12px calc(12px + env(safe-area-inset-bottom));
     flex-direction: column;
   }
-  .composer > div {
+  .composer-tools {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .composer-actions {
     justify-content: flex-end;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .composer-actions button {
+    flex: 1;
+  }
+  .composer-modal {
+    padding: 18px 14px;
+  }
+  .composer-modal-heading {
+    flex-direction: column;
   }
   .terminal-panel {
     padding: 12px;

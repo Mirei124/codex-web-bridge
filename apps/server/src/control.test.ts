@@ -17,6 +17,7 @@ class FakeRuntime implements RuntimeManager {
   readonly terminalInputs: string[] = [];
   readonly resolutions: Array<{ requestId: string | number; value: unknown }> = [];
   readonly passwords = new Map<string, string>();
+  readonly sentMessages: string[] = [];
   createError: Error | undefined;
   setHostPassword(hostId: string, password?: string) {
     if (password) this.passwords.set(hostId, password);
@@ -32,7 +33,8 @@ class FakeRuntime implements RuntimeManager {
   }
   async reconnect() {}
   async exit() {}
-  async send() {
+  async send(_thread: unknown, text: string) {
+    this.sentMessages.push(text);
     return "turn-1";
   }
   async interrupt() {}
@@ -141,6 +143,18 @@ describe("local control server", () => {
       ok: true,
       result: { turnId: "turn-1" },
     });
+    expect(
+      await request(socketPath, "thread.send", { threadId: created.result.id, text: "queued", queue: true }),
+    ).toMatchObject({
+      ok: true,
+      result: { queued: true, position: 1 },
+    });
+    runtime.events.emit("event", {
+      type: "codex",
+      threadId: created.result.id,
+      payload: { method: "turn/completed", params: { turn: { status: "completed" } } },
+    });
+    expect(runtime.sentMessages).toEqual(["hello", "queued"]);
 
     const plainHttp = await app!.inject({ method: "GET", url: "/api/hosts" });
     expect(plainHttp.statusCode).toBe(401);

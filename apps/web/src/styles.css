@@ -660,8 +660,21 @@ nav small {
   border-top: 2px dashed #d9cfb9;
   padding: 15px max(24px, calc((100% - 850px) / 2));
   display: flex;
+  flex-wrap: wrap;
   gap: 11px;
   background: rgba(247, 243, 223, 0.84);
+}
+.composer-tools {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.composer-hint {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
 }
 .composer textarea {
   flex: 1;
@@ -674,10 +687,30 @@ nav small {
 .composer textarea:disabled {
   opacity: 0.62;
 }
-.composer > div {
+.composer-actions {
   display: flex;
   gap: 8px;
   align-items: flex-end;
+}
+.composer-modal {
+  width: min(960px, 100%);
+}
+.composer-modal-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.composer-modal-heading p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+.composer-modal textarea {
+  width: 100%;
+  min-height: min(60vh, 520px);
+  resize: vertical;
+  border-radius: 24px;
+  padding: 18px 20px;
 }
 .request {
   border: 2px dashed #d4c4a8;

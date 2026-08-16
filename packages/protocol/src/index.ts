@@ -160,6 +160,7 @@ export interface ResumeThreadRequest {
 }
 export interface SendMessageRequest {
   text: string;
+  queue?: boolean;
 }
 export interface ResolveRequest {
   value?: string;
