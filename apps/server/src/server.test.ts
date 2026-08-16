@@ -207,6 +207,7 @@ class FakeRuntime implements RuntimeManager {
   calls: string[] = [];
   resolutions: Array<{ requestId: string | number; value: unknown }> = [];
   failExit = false;
+  historicalThreads: Array<{ id: string; title?: string; cwd?: string; updatedAt?: string }> = [];
   directoryExists = true;
   directoryChecks: Array<{ cwd: string; create: boolean }> = [];
   async ensureWorkingDirectory(_host: unknown, cwd: string, create: boolean) {
@@ -253,6 +254,9 @@ class FakeRuntime implements RuntimeManager {
   async close() {}
   async terminalSeed() {
     return "\u001b[31mseed\u001b[0m";
+  }
+  async listHistorical() {
+    return this.historicalThreads;
   }
   setHostPassword(hostId: string, password?: string) {
     this.calls.push(`password:${hostId}:${password ?? "cleared"}`);
@@ -898,4 +902,119 @@ it("maps MCP elicitation responses to Codex RPC results", async () => {
       },
     },
   ]);
+});
+
+it("uses discovered history cwd when resuming without an explicit cwd and limits history results to six", async () => {
+  storage = new Storage(":memory:");
+  storage.upsertHost({
+    id: "host",
+    name: "A",
+    hostname: "a",
+    port: 22,
+    username: "u",
+    hostKeySha256: "key",
+    identityFile: "/key",
+    createdAt: 1,
+  });
+  const runtime = new FakeRuntime();
+  runtime.historicalThreads = Array.from({ length: 8 }, (_, index) => ({
+    id: `codex-${index}`,
+    title: `Thread ${index}`,
+    cwd: `/work/${index}`,
+  }));
+  app = await buildServer(
+    {
+      version: 1,
+      bindHost: "127.0.0.1",
+      port: 3210,
+      publicOrigin: "https://bridge.example",
+      passwordHash: await hashPassword("correct horse battery staple"),
+      sessionSecret: "x".repeat(32),
+      trustedProxy: "127.0.0.1",
+    },
+    storage,
+    { runtime, webRoot: false },
+  );
+  const base = { "x-forwarded-proto": "https", origin: "https://bridge.example" };
+  const login = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    headers: base,
+    payload: { password: "correct horse battery staple" },
+  });
+  const headers = {
+    ...base,
+    cookie: `${login.cookies[0]!.name}=${login.cookies[0]!.value}`,
+    "x-csrf-token": login.json().csrfToken,
+  };
+  const history = await app.inject({ method: "GET", url: "/api/hosts/host/codex-threads", headers });
+  expect(history.statusCode).toBe(200);
+  expect(history.json()).toHaveLength(6);
+  const resumed = await app.inject({
+    method: "POST",
+    url: "/api/threads/resume",
+    headers,
+    payload: { hostId: "host", codexThreadId: "codex-3" },
+  });
+  expect(resumed.statusCode).toBe(201);
+  expect(resumed.json()).toMatchObject({ codexThreadId: "codex-3", cwd: "/work/3", status: "idle" });
+});
+
+it("allows in-place resume for reconnect-failed threads", async () => {
+  storage = new Storage(":memory:");
+  storage.upsertHost({
+    id: "host",
+    name: "A",
+    hostname: "a",
+    port: 22,
+    username: "u",
+    hostKeySha256: "key",
+    identityFile: "/key",
+    createdAt: 1,
+  });
+  storage.createThread({
+    id: "thread",
+    hostId: "host",
+    codexThreadId: "codex-1",
+    tmuxSession: "cwb-thread",
+    remotePort: 45678,
+    workingDirectory: "/work",
+    title: "Reconnect failed",
+    status: "error",
+    lastError: "Unable to reconnect to the remote Codex runtime",
+    lastErrorKind: "reconnect_failed",
+    hasRollout: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  const runtime = new FakeRuntime();
+  app = await buildServer(
+    {
+      version: 1,
+      bindHost: "127.0.0.1",
+      port: 3210,
+      publicOrigin: "https://bridge.example",
+      passwordHash: await hashPassword("correct horse battery staple"),
+      sessionSecret: "x".repeat(32),
+      trustedProxy: "127.0.0.1",
+    },
+    storage,
+    { runtime, webRoot: false },
+  );
+  const base = { "x-forwarded-proto": "https", origin: "https://bridge.example" };
+  const login = await app.inject({
+    method: "POST",
+    url: "/api/auth/login",
+    headers: base,
+    payload: { password: "correct horse battery staple" },
+  });
+  const headers = {
+    ...base,
+    cookie: `${login.cookies[0]!.name}=${login.cookies[0]!.value}`,
+    "x-csrf-token": login.json().csrfToken,
+  };
+  const resumed = await app.inject({ method: "POST", url: "/api/threads/thread/resume", headers });
+  expect(resumed.statusCode).toBe(200);
+  expect(resumed.json()).toMatchObject({ id: "thread", status: "idle" });
+  expect(runtime.calls).toContain("resume");
 });

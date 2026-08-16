@@ -17,6 +17,14 @@ import { Terminal, TerminalSnapshot } from "./Terminal";
 import { useThreadEvents } from "./useThreadEvents";
 
 const baseTitle = "Codex Bridge";
+type ResumeSeed = {
+  hostId: string;
+  codexThreadId?: string;
+  cwd?: string;
+  proxy?: string;
+  prependPath?: string;
+};
+
 function notificationContextAvailable(): boolean {
   return window.isSecureContext;
 }
@@ -28,14 +36,17 @@ function notificationProblem(): string | undefined {
   if (Notification.permission === "default") return "允许系统通知后，Codex 回答完成时可以在后台提醒你。";
 }
 
-function threadStatusLabel(thread: Pick<ThreadSummary, "status" | "lastError">): string {
-  if (thread.status !== "error") return thread.status;
-  return thread.lastError ? `error · ${thread.lastError}` : "error · 未提供失败原因";
-}
-
-function threadErrorSummary(thread: Pick<ThreadSummary, "status" | "lastError">): string | undefined {
-  if (thread.status !== "error") return;
-  return thread.lastError ?? "会话失败，但服务端没有返回更具体的错误原因。";
+function threadStateSummary(
+  thread: Pick<ThreadSummary, "status" | "lastError" | "lastErrorKind">,
+): { label: string; detail?: string } {
+  if (thread.status === "error") {
+    if (thread.lastErrorKind === "reconnect_failed")
+      return { label: "连接已断开", detail: thread.lastError ?? "无法重新连接远端 Codex 运行时。" };
+    return { label: "启动或恢复失败", detail: thread.lastError ?? "会话启动失败，但服务端没有返回更具体的错误原因。" };
+  }
+  if (thread.lastErrorKind === "turn_failed")
+    return { label: "上一轮失败，可继续对话", detail: thread.lastError ?? "上一轮执行失败。" };
+  return { label: thread.status };
 }
 
 function Login({ onLogin }: { onLogin(): void }) {
@@ -165,19 +176,24 @@ function CreateDialog({
   mode,
   onClose,
   onDone,
+  initialResume,
 }: {
   hosts: HostSummary[];
   mode: "create" | "resume";
   onClose(): void;
   onDone(thread: ThreadDetail): void;
+  initialResume?: ResumeSeed;
 }) {
-  const [hostId, setHostId] = useState(hosts[0]?.id ?? "");
-  const [cwd, setCwd] = useState("");
-  const [threadId, setThreadId] = useState("");
-  const [proxy, setProxy] = useState("");
-  const [prependPath, setPrependPath] = useState("");
+  const [hostId, setHostId] = useState(initialResume?.hostId ?? hosts[0]?.id ?? "");
+  const [cwd, setCwd] = useState(mode === "create" ? "" : initialResume?.cwd ?? "");
+  const [threadId, setThreadId] = useState(initialResume?.codexThreadId ?? "");
+  const [proxy, setProxy] = useState(initialResume?.proxy ?? "");
+  const [prependPath, setPrependPath] = useState(initialResume?.prependPath ?? "");
   const [error, setError] = useState("");
   const [discovered, setDiscovered] = useState<CodexThreadSummary[]>([]);
+  const [resumeStep, setResumeStep] = useState<1 | 2>(mode === "resume" ? 1 : 2);
+  const [scanning, setScanning] = useState(false);
+  const [selectedHistory, setSelectedHistory] = useState<CodexThreadSummary | undefined>();
   const [defaults, setDefaults] = useState<ThreadCreateDefaults>({ hosts: [], cwdHistory: [] });
   const [loadingDefaults, setLoadingDefaults] = useState(mode === "create");
   const [submitting, setSubmitting] = useState(false);
@@ -211,30 +227,57 @@ function CreateDialog({
       active = false;
     };
   }, [hosts, mode]);
+  const scanHistoricalThreads = useCallback(async () => {
+    if (!hostId) return;
+    setScanning(true);
+    setError("");
+    try {
+      const items = await api.codexThreads(hostId);
+      setDiscovered(items);
+      const matched =
+        items.find((item) => item.id === initialResume?.codexThreadId) ??
+        items.find((item) => item.id === threadId.trim());
+      setSelectedHistory(matched);
+    } catch {
+      setDiscovered([]);
+      setSelectedHistory(undefined);
+    } finally {
+      setScanning(false);
+    }
+  }, [hostId, initialResume?.codexThreadId, threadId]);
   useEffect(() => {
-    if (mode !== "resume" || !hostId) return;
+    if (mode !== "resume" || !hostId || resumeStep !== 2) return;
     let active = true;
-    api
-      .codexThreads(hostId)
-      .then((items) => {
-        if (active) setDiscovered(items);
-      })
-      .catch(() => {
-        if (active) setDiscovered([]);
-      });
+    void (async () => {
+      setScanning(true);
+      try {
+        const items = await api.codexThreads(hostId);
+        if (!active) return;
+        setDiscovered(items);
+        const matched =
+          items.find((item) => item.id === initialResume?.codexThreadId) ??
+          items.find((item) => item.id === threadId.trim());
+        setSelectedHistory(matched);
+      } catch {
+        if (active) {
+          setDiscovered([]);
+          setSelectedHistory(undefined);
+        }
+      } finally {
+        if (active) setScanning(false);
+      }
+    })();
     return () => {
       active = false;
     };
-  }, [hostId, mode]);
-  function chooseDiscovered(id: string) {
-    const item = discovered.find((candidate) => candidate.id === id);
-    if (!item) return;
-    setThreadId(item.id);
-    if (item.cwd) setCwd(item.cwd);
-  }
+  }, [hostId, initialResume?.codexThreadId, mode, resumeStep, threadId]);
   function changeHost(nextHostId: string) {
     setHostId(nextHostId);
     if (mode === "create") applyHostDefaults(nextHostId);
+    else {
+      setDiscovered([]);
+      setSelectedHistory(undefined);
+    }
   }
   async function deleteCwdHistory(value: string) {
     try {
@@ -250,30 +293,70 @@ function CreateDialog({
     setError("");
     const proxyValue = proxy.trim(),
       prependPathValue = prependPath.trim(),
-      values = {
-        hostId,
-        cwd: cwd.trim(),
-        ...(proxyValue ? { proxy: proxyValue } : {}),
-        ...(prependPathValue ? { prependPath: prependPathValue } : {}),
-      };
+      cwdValue = cwd.trim();
     setSubmitting(true);
     try {
       if (mode === "create") {
-        await api.saveThreadCreateDefaults(values);
+        const createValues = {
+          hostId,
+          cwd: cwdValue,
+          ...(proxyValue ? { proxy: proxyValue } : {}),
+          ...(prependPathValue ? { prependPath: prependPathValue } : {}),
+        };
+        await api.saveThreadCreateDefaults(createValues);
         try {
-          onDone(await api.createThread(values));
+          onDone(await api.createThread(createValues));
         } catch (e) {
           if (
             e instanceof ApiError &&
             e.code === "WORKING_DIRECTORY_NOT_FOUND" &&
-            confirm(`工作目录“${values.cwd}”不存在，是否创建该目录？`)
+            confirm(`工作目录“${cwdValue}”不存在，是否创建该目录？`)
           ) {
-            onDone(await api.createThread({ ...values, createDirectory: true }));
+            onDone(await api.createThread({ ...createValues, createDirectory: true }));
           } else throw e;
         }
-      } else onDone(await api.resumeThread({ ...values, codexThreadId: threadId }));
+      } else {
+        const resumeValues = {
+          hostId,
+          codexThreadId: threadId.trim(),
+          ...(proxyValue ? { proxy: proxyValue } : {}),
+          ...(prependPathValue ? { prependPath: prependPathValue } : {}),
+          ...(cwdValue
+            ? { cwd: cwdValue }
+            : selectedHistory?.cwd
+              ? {}
+              : initialResume?.cwd && threadId.trim() === initialResume.codexThreadId
+                ? { cwd: initialResume.cwd }
+                : {}),
+        };
+        onDone(
+          await api.resumeThread(resumeValues),
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "操作失败");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  async function restoreHistorical(item: CodexThreadSummary) {
+    if (submitting) return;
+    setSelectedHistory(item);
+    setThreadId(item.id);
+    setError("");
+    setSubmitting(true);
+    try {
+      onDone(
+        await api.resumeThread({
+          hostId,
+          codexThreadId: item.id,
+          ...(proxy.trim() ? { proxy: proxy.trim() } : {}),
+          ...(prependPath.trim() ? { prependPath: prependPath.trim() } : {}),
+          ...(cwd.trim() ? { cwd: cwd.trim() } : {}),
+        }),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "恢复会话失败");
     } finally {
       setSubmitting(false);
     }
@@ -292,40 +375,33 @@ function CreateDialog({
             ))}
           </select>
         </label>
-        {mode === "resume" && (
+        {mode === "resume" && resumeStep === 1 && (
           <>
             <label>
-              发现的历史会话
-              <select value="" onChange={(e) => chooseDiscovered(e.target.value)}>
-                <option value="">选择后自动填写</option>
-                {discovered.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.title ?? item.id}
-                    {item.cwd ? ` · ${item.cwd}` : ""}
-                  </option>
-                ))}
-              </select>
+              代理地址（可选）
+              <input value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="http://127.0.0.1:7890" />
             </label>
             <label>
-              Codex Thread ID
+              会话前置 PATH（可选）
               <input
-                autoFocus
-                value={threadId}
-                onChange={(e) => setThreadId(e.target.value)}
-                placeholder="也可手动输入 019…"
+                value={prependPath}
+                onChange={(e) => setPrependPath(e.target.value)}
+                placeholder="/home/user/.local/bin:/opt/bin"
               />
+              <small>添加到主机级前置 PATH 之前，仅影响此恢复会话。</small>
             </label>
+            <p>下一步会扫描该主机最近 6 条历史会话。你也可以在下一步手动输入 Thread ID。</p>
           </>
         )}
         <label>
-          工作目录
+          工作目录{mode === "resume" ? "（可选）" : ""}
           <input
             disabled={loadingDefaults}
             autoFocus={mode === "create"}
             list={mode === "create" && defaults.cwdHistory.length ? "thread-create-cwd-history" : undefined}
             value={cwd}
             onChange={(e) => setCwd(e.target.value)}
-            placeholder="/srv/project"
+            placeholder={mode === "resume" ? "留空则使用历史会话目录" : "/srv/project"}
           />
           {mode === "create" && defaults.cwdHistory.length > 0 && (
             <>
@@ -353,46 +429,85 @@ function CreateDialog({
               </div>
             </>
           )}
+          {mode === "resume" && (
+            <small>
+              默认沿用历史会话目录；如填写新的绝对路径，则在该目录中恢复。
+              {!selectedHistory && threadId.trim() ? " 手动输入不在列表中的 Thread ID 时，建议同时填写工作目录。" : ""}
+            </small>
+          )}
         </label>
-        <label>
-          代理地址（可选）
-          <input
-            disabled={loadingDefaults}
-            value={proxy}
-            onChange={(e) => setProxy(e.target.value)}
-            placeholder="http://127.0.0.1:7890"
-          />
-        </label>
-        <label>
-          会话前置 PATH（可选）
-          <input
-            disabled={loadingDefaults}
-            value={prependPath}
-            onChange={(e) => setPrependPath(e.target.value)}
-            placeholder="/home/user/.local/bin:/opt/bin"
-          />
-          <small>添加到主机级前置 PATH 之前，仅影响此会话。</small>
-        </label>
+        {mode === "resume" && resumeStep === 2 && (
+          <>
+            <section className="request choice">
+              <strong>最近 6 条历史会话</strong>
+              <div className="choices">
+                {discovered.map((item) => (
+                  <button key={item.id} type="button" onClick={() => void restoreHistorical(item)}>
+                    <b>{item.title ?? item.id}</b>
+                    <small>{item.id}</small>
+                    <small>{item.cwd ?? "未返回工作目录"}</small>
+                  </button>
+                ))}
+              </div>
+              {!scanning && discovered.length === 0 && <p>未扫描到可恢复的历史会话，可直接手动输入 Thread ID。</p>}
+              {scanning && <p>正在扫描最近会话…</p>}
+            </section>
+            <label>
+              Codex Thread ID
+              <input
+                autoFocus
+                value={threadId}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setThreadId(value);
+                  const matched = discovered.find((candidate) => candidate.id === value);
+                  setSelectedHistory(matched);
+                }}
+                placeholder="也可手动输入 019…"
+              />
+            </label>
+            {selectedHistory && (
+              <div className="settings-result" role="status">
+                <strong>{selectedHistory.title ?? selectedHistory.id}</strong>
+                <span>默认目录：{selectedHistory.cwd ?? "未返回工作目录"}</span>
+              </div>
+            )}
+          </>
+        )}
         {error && <div className="error">{error}</div>}
         <div className="actions">
           <button type="button" className="secondary" disabled={submitting} onClick={onClose}>
             取消
           </button>
-          <button
-            disabled={
-              loadingDefaults || submitting || !hostId || !cwd.trim() || (mode === "resume" && !threadId.trim())
-            }
-          >
-            {loadingDefaults
-              ? "读取中…"
-              : submitting
-                ? mode === "create"
-                  ? "创建中…"
-                  : "恢复中…"
-                : mode === "create"
-                  ? "创建"
-                  : "恢复"}
-          </button>
+          {mode === "resume" && resumeStep === 2 && (
+            <button type="button" className="secondary" disabled={submitting} onClick={() => setResumeStep(1)}>
+              上一步
+            </button>
+          )}
+          {mode === "resume" && resumeStep === 1 ? (
+            <button
+              type="button"
+              disabled={submitting || !hostId}
+              onClick={() => {
+                setResumeStep(2);
+                void scanHistoricalThreads();
+              }}
+            >
+              下一步
+            </button>
+          ) : (
+            <button disabled={loadingDefaults || submitting || !hostId || (mode === "create" ? !cwd.trim() : !threadId.trim())}>
+              {loadingDefaults
+                ? "读取中…"
+                : submitting
+                  ? mode === "create"
+                    ? "创建中…"
+                    : "恢复中…"
+                  : mode === "create"
+                    ? "创建"
+                    : "按 ID 恢复"}
+            </button>
+          )}
         </div>
       </form>
     </div>
@@ -752,6 +867,7 @@ export default function App() {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [selected, setSelected] = useState<ThreadDetail>();
   const [dialog, setDialog] = useState<"create" | "resume">();
+  const [resumeSeed, setResumeSeed] = useState<ResumeSeed>();
   const [draft, setDraft] = useState("");
   const [tab, setTab] = useState<"chat" | "terminal">("chat");
   const [terminalData, setTerminalData] = useState<string[]>([]);
@@ -847,6 +963,8 @@ export default function App() {
   );
   const codexGenerating =
     selected?.status === "running" || Boolean(selected?.messages.some((m) => m.role === "assistant" && m.streaming));
+  const selectedState = selected ? threadStateSummary(selected) : undefined;
+  const composerDisabled = selected?.status === "exited" || selected?.status === "error";
   useEffect(() => {
     if (codexGenerating) return;
     setInterruptArmedThreadId(undefined);
@@ -910,6 +1028,10 @@ export default function App() {
     messages?.item(messages.length - 1)?.scrollIntoView?.({ block: "start" });
     setShowScrollHint(false);
   }
+  function openResumeDialog(seed?: ResumeSeed) {
+    setResumeSeed(seed);
+    setDialog("resume");
+  }
   const handleEvent = useCallback((event: ServerEvent) => {
     if (event.type === "snapshot") {
       threadStates.current.set(event.thread.id, event.thread.status);
@@ -926,8 +1048,10 @@ export default function App() {
       if (completed)
         notifyUnreadThread(
           event.thread.id,
-          event.thread.status === "error" ? "Codex 会话执行失败" : "Codex 已完成回答",
-          event.thread.status === "error" ? threadErrorSummary(event.thread) ?? event.thread.title : event.thread.title,
+          event.thread.lastErrorKind === "turn_failed" || event.thread.status === "error"
+            ? "Codex 会话执行失败"
+            : "Codex 已完成回答",
+          threadStateSummary(event.thread).detail ?? event.thread.title,
         );
       if (event.thread.status === "waiting")
         notifyUnreadThread(event.thread.id, "Codex 需要你操作", event.thread.title);
@@ -1122,7 +1246,7 @@ export default function App() {
             className="secondary"
             onClick={() => {
               setView("threads");
-              setDialog("resume");
+              openResumeDialog();
             }}
           >
             恢复
@@ -1159,7 +1283,7 @@ export default function App() {
               >
                 <span>{t.title}</span>
                 <small>
-                  {threadStatusLabel(t)} · {t.cwd}
+                  {threadStateSummary(t).label} · {t.cwd}
                 </small>
               </button>
               <button className="thread-delete" aria-label={`删除会话 ${t.title}`} onClick={() => void deleteThread(t)}>
@@ -1196,7 +1320,7 @@ export default function App() {
               <div>
                 <h1>{selected.title}</h1>
                 <p>
-                  {selected.cwd} · {threadStatusLabel(selected)}
+                  {selected.cwd} · {selectedState?.label}
                   {selected.model ? ` · 模型：${selected.model}` : ""}
                 </p>
               </div>
@@ -1207,21 +1331,40 @@ export default function App() {
                 <button className={tab === "terminal" ? "" : "secondary"} onClick={() => setTab("terminal")}>
                   终端
                 </button>
-                {selected.status === "exited" ? (
+                {selected.status === "exited" || (selected.status === "error" && selected.lastErrorKind === "reconnect_failed") ? (
                   <button disabled={resuming} onClick={() => void resumeSelected()}>
-                    {resuming ? "恢复中…" : "恢复会话"}
+                    {resuming ? "恢复中…" : selected.status === "exited" ? "恢复会话" : "直接恢复连接"}
                   </button>
                 ) : (
-                  <button className="danger" disabled={exiting} onClick={() => void exitSelected()}>
-                    {exiting ? "退出中…" : "退出会话"}
-                  </button>
+                  <>
+                    {selected.status === "error" && selected.codexThreadId && (
+                      <button
+                        className="secondary"
+                        onClick={() =>
+                          openResumeDialog({
+                            hostId: selected.hostId,
+                            codexThreadId: selected.codexThreadId,
+                            cwd: selected.cwd,
+                            proxy: selected.proxy,
+                            prependPath: selected.prependPath,
+                          })
+                        }
+                      >
+                        重新打开恢复
+                      </button>
+                    )}
+                    <button className="danger" disabled={exiting} onClick={() => void exitSelected()}>
+                      {exiting ? "退出中…" : "退出会话"}
+                    </button>
+                  </>
                 )}
               </div>
             </header>
             {operationError && <div className="operation-error error">{operationError}</div>}
-            {selected.status === "error" && selected.lastError && (
+            {selectedState?.detail && (
               <div className="operation-error error" role="alert">
-                会话错误：{selected.lastError}
+                {selected.lastErrorKind === "turn_failed" ? "上一轮执行失败：" : "会话错误："}
+                {selectedState.detail}
               </div>
             )}
             {tab === "chat" ? (
@@ -1258,10 +1401,16 @@ export default function App() {
                 )}
                 <form className="composer" onSubmit={send}>
                   <textarea
-                    disabled={selected.status === "exited"}
+                    disabled={composerDisabled}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
-                    placeholder={selected.status === "exited" ? "该会话已退出" : "继续对话…"}
+                    placeholder={
+                      selected.status === "exited"
+                        ? "该会话已退出"
+                        : selected.status === "error"
+                          ? "请先恢复或重新连接会话"
+                          : "继续对话…"
+                    }
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
@@ -1275,7 +1424,7 @@ export default function App() {
                         {interruptArmedThreadId === selected.id ? "再次点击中断" : "中断"}
                       </button>
                     )}
-                    <button disabled={selected.status === "exited" || !draft.trim()}>发送</button>
+                    <button disabled={composerDisabled || !draft.trim()}>发送</button>
                   </div>
                 </form>
               </>
@@ -1322,10 +1471,15 @@ export default function App() {
         <CreateDialog
           hosts={hosts}
           mode={dialog}
-          onClose={() => setDialog(undefined)}
+          initialResume={dialog === "resume" ? resumeSeed : undefined}
+          onClose={() => {
+            setDialog(undefined);
+            setResumeSeed(undefined);
+          }}
           onDone={(thread) => {
             setDialog(undefined);
-            setThreads((old) => [thread, ...old]);
+            setResumeSeed(undefined);
+            setThreads((old) => [thread, ...old.filter((item) => item.id !== thread.id)]);
             setSelected(thread);
             setView("threads");
             setNavigationOpen(false);

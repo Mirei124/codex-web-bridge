@@ -1,5 +1,6 @@
 export type HostStatus = "online" | "offline" | "connecting";
 export type ThreadStatus = "idle" | "running" | "waiting" | "exited" | "error";
+export type ThreadErrorKind = "startup_failed" | "turn_failed" | "reconnect_failed";
 
 export interface HostSummary {
   id: string;
@@ -46,6 +47,7 @@ export interface ThreadSummary {
   model?: string;
   status: ThreadStatus;
   lastError?: string;
+  lastErrorKind?: ThreadErrorKind;
   updatedAt: string;
 }
 
@@ -152,7 +154,7 @@ export interface DeleteThreadCreateCwdRequest {
 export interface ResumeThreadRequest {
   hostId: string;
   codexThreadId: string;
-  cwd: string;
+  cwd?: string;
   proxy?: string;
   prependPath?: string;
 }
