@@ -202,6 +202,54 @@ it("updates public settings without exposing internal secrets", async () => {
   );
 });
 
+it("does not block server startup on slow persisted-thread probes", async () => {
+  storage = new Storage(":memory:");
+  storage.upsertHost({
+    id: "host",
+    name: "A",
+    hostname: "a",
+    port: 22,
+    username: "u",
+    hostKeySha256: "key",
+    identityFile: "/key",
+    createdAt: 1,
+  });
+  storage.createThread({
+    id: "thread",
+    hostId: "host",
+    codexThreadId: "codex",
+    tmuxSession: "cwb-thread",
+    remotePort: 45678,
+    workingDirectory: "/work",
+    title: "thread",
+    status: "idle",
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  const runtime = new FakeRuntime();
+  runtime.probe = async () => await new Promise<"reachable">(() => undefined);
+  const started = buildServer(
+    {
+      version: 1,
+      bindHost: "127.0.0.1",
+      port: 3210,
+      publicOrigin: "https://bridge.example",
+      passwordHash: await hashPassword("correct horse battery staple"),
+      sessionSecret: "x".repeat(32),
+      trustedProxy: "127.0.0.1",
+    },
+    storage,
+    { runtime, webRoot: false },
+  );
+  await expect(
+    Promise.race([
+      started,
+      new Promise<symbol>((resolve) => setTimeout(() => resolve(Symbol.for("timeout")), 50)),
+    ]),
+  ).resolves.not.toBe(Symbol.for("timeout"));
+  app = await started;
+});
+
 class FakeRuntime implements RuntimeManager {
   events = new EventEmitter();
   calls: string[] = [];
@@ -223,11 +271,11 @@ class FakeRuntime implements RuntimeManager {
   async resume() {
     this.calls.push("resume");
   }
-  async probe(_host: unknown, thread: { remotePort?: number }) {
+  probe = async (_host: unknown, thread: { remotePort?: number }) => {
     this.calls.push(`probe:${thread.remotePort}`);
     if (this.probeError) throw this.probeError;
     return this.probeResults.get(thread.remotePort ?? -1) ?? "reachable";
-  }
+  };
   async reconnect(_host: unknown, thread: { remotePort?: number }) {
     this.calls.push(`reconnect:${thread.remotePort}`);
   }

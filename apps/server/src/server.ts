@@ -234,7 +234,11 @@ function clearThreadError(storage: Storage, threadId: string, status: ThreadSumm
   });
 }
 
-async function inspectPersistedThreads(storage: Storage, runtime: RuntimeManager): Promise<void> {
+async function inspectPersistedThreads(
+  storage: Storage,
+  runtime: RuntimeManager,
+  publish?: (event: ServerEvent) => void,
+): Promise<void> {
   for (const thread of storage.threads().filter((item) => item.status !== "exited")) {
     storage.resolveAllPending(thread.id);
     const host = storage.host(thread.hostId);
@@ -254,6 +258,8 @@ async function inspectPersistedThreads(storage: Storage, runtime: RuntimeManager
     } catch (error) {
       setThreadError(storage, thread.id, "reconnect_failed", `Unable to verify the remote runtime: ${errorMessage(error)}`);
     }
+    const updated = storage.thread(thread.id);
+    if (updated && publish) publish({ type: "thread.updated", thread: summary(updated) });
   }
 }
 
@@ -1109,7 +1115,9 @@ export async function buildServer(
   runtime.events.on("connectionLost", invalidatePending);
   runtime.events.on("generationChanged", invalidatePending);
   runtime.events.on("connectionGenerationChanged", invalidatePending);
-  await inspectPersistedThreads(storage, runtime);
+  queueMicrotask(() => {
+    void inspectPersistedThreads(storage, runtime, publish).catch((error) => app.log.error(error));
+  });
   app.addHook("onClose", async () => {
     for (const socket of sockets.keys()) socket.close();
     wss.close();
