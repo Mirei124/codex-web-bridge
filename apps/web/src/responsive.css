@@ -84,6 +84,19 @@
   .conversation article.assistant {
     padding: 14px;
   }
+  .markdown-table th,
+  .markdown-table td {
+    padding: 9px 11px;
+  }
+  .plan-card {
+    padding: 13px;
+  }
+  .plan-step {
+    grid-template-columns: 21px minmax(0, 1fr);
+  }
+  .plan-step small {
+    grid-column: 2;
+  }
   .composer {
     padding: 11px 12px calc(12px + env(safe-area-inset-bottom));
     display: flex;

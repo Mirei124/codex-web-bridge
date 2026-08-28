@@ -13,6 +13,7 @@ import type {
   UpdateSettingsRequest,
 } from "@cwb/protocol";
 import { ApiError, api } from "./api";
+import { MessageContent } from "./MessageContent";
 import { Terminal, TerminalSnapshot } from "./Terminal";
 import { useThreadEvents } from "./useThreadEvents";
 
@@ -1448,7 +1449,7 @@ export default function App() {
                         {m.role === "assistant" ? "Codex" : m.role === "user" ? "你" : "系统"}
                         {m.streaming && <em>生成中</em>}
                       </label>
-                      <div>{m.text}</div>
+                      <MessageContent text={m.text} />
                     </article>
                   ))}
                   {selected.pendingRequests.map((r) => (

@@ -671,9 +671,217 @@ nav small {
 .conversation article {
   position: relative;
   line-height: 1.65;
-  white-space: pre-wrap;
   color: var(--text);
   font-weight: 500;
+}
+.markdown-content > :first-child {
+  margin-top: 0;
+}
+.markdown-content > :last-child {
+  margin-bottom: 0;
+}
+.markdown-content p,
+.markdown-content ul,
+.markdown-content pre {
+  margin: 0.65em 0;
+}
+.markdown-content ul {
+  padding-left: 1.5em;
+}
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  margin: 0.85em 0 0.35em;
+  color: var(--brown);
+  line-height: 1.28;
+}
+.markdown-content h1 {
+  font-size: 1.5em;
+}
+.markdown-content h2 {
+  font-size: 1.3em;
+}
+.markdown-content h3 {
+  font-size: 1.15em;
+}
+.markdown-content code {
+  padding: 0.08em 0.35em;
+  color: #725d42;
+  background: #eee5d5;
+  border-radius: 5px;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.9em;
+}
+.markdown-content a {
+  color: #0c827a;
+  font-weight: 700;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 2px;
+}
+.markdown-code {
+  max-width: 100%;
+  overflow: auto;
+  padding: 12px 14px;
+  color: #f8f8f0;
+  background: #4d433a;
+  border: 2px solid #786b5c;
+  border-radius: 13px;
+  white-space: pre;
+}
+.markdown-code code {
+  padding: 0;
+  color: inherit;
+  background: transparent;
+}
+.markdown-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.8em 0;
+  padding: 5px;
+  border: 1.5px solid #ded0b6;
+  border-radius: 16px;
+  background: #f7f3df;
+  scrollbar-color: #c4b89e transparent;
+}
+.markdown-table-wrap:focus-visible {
+  outline: 3px solid rgba(14, 196, 182, 0.45);
+  outline-offset: 2px;
+}
+.markdown-table {
+  width: 100%;
+  min-width: max-content;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+}
+.markdown-table th,
+.markdown-table td {
+  padding: 10px 14px;
+  border-bottom: 1px dashed #ded0b6;
+  vertical-align: top;
+}
+.markdown-table th {
+  color: #725d42;
+  font-size: 0.9em;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.markdown-table tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.38);
+}
+.markdown-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.plan-card {
+  display: grid;
+  gap: 12px;
+  margin-top: 2px;
+  padding: 15px;
+  background: #f7f3df;
+  border: 1.5px solid #d6c39e;
+  border-radius: 18px 18px 18px 7px;
+  box-shadow: 0 3px 0 rgba(143, 115, 67, 0.16);
+}
+.plan-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #8b775e;
+  font-size: 12px;
+  font-weight: 800;
+}
+.plan-card-header div {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--brown);
+  font-size: 15px;
+}
+.plan-explanation {
+  margin: -2px 0 0;
+  color: #7a6b56;
+}
+.plan-progress {
+  height: 10px;
+  overflow: hidden;
+  background: #ece2d0;
+  border: 1px solid #d9c9ad;
+  border-radius: 999px;
+  box-shadow: inset 0 1px 2px rgba(84, 66, 42, 0.12);
+}
+.plan-progress span {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(-45deg, #0ec4b6 0 10px, #01b0a7 10px 20px);
+  background-size: 28px 28px;
+  transition: width 0.3s ease;
+}
+.plan-steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.plan-step {
+  display: grid;
+  grid-template-columns: 21px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 11px;
+  color: #7d705e;
+}
+.plan-step.in_progress {
+  color: #285f5a;
+  background: #dff3e9;
+  box-shadow: inset 0 0 0 1px #a9d9c7;
+}
+.plan-step.completed {
+  color: #607f6c;
+}
+.plan-status {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  color: #a89780;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font-weight: 900;
+  line-height: 1;
+}
+.plan-step.in_progress .plan-status {
+  color: #0c9d8d;
+  background: #fff;
+  animation: plan-pulse 1.5s ease-in-out infinite;
+}
+.plan-step.completed .plan-status {
+  color: #fff;
+  background: #74b884;
+  border-color: #74b884;
+}
+.plan-step small {
+  color: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+@keyframes plan-pulse {
+  50% {
+    transform: scale(1.12);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-step.in_progress .plan-status {
+    animation: none;
+  }
 }
 .conversation article label {
   display: inline-flex;
