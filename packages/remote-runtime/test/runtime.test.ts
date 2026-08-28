@@ -18,6 +18,7 @@ class FakeRemote implements RemoteExecutor {
   readyPorts = new Set<number>();
   commandLookupCode: number | null = 0;
   appServerLog = "";
+  appServerLogTail?: string;
   paneListing = "%1\tapp-server\t\n%2\tviewer\tthread-1\n";
   streams: any[] = [];
   async execute(program: string, args: readonly string[] = []): Promise<CommandResult> {
@@ -36,6 +37,12 @@ class FakeRemote implements RemoteExecutor {
     if (program.endsWith("tmux") && args[0] === "display-message") return { stdout: "93\t31\n", stderr: "", code: 0 };
     if (program === "stat" || program === "id") return { stdout: "1000\n", stderr: "", code: 0 };
     if (program === "sh" && args[0] === "-c" && args[1] === 'test -f "$1" && tail -n 20 "$1"')
+      return { stdout: this.appServerLogTail ?? this.appServerLog, stderr: "", code: this.appServerLog ? 0 : 1 };
+    if (
+      program === "sh" &&
+      args[0] === "-c" &&
+      args[1] === 'test -f "$1" && grep -a -E "listening on:[[:space:]]+ws://127\\.0\\.0\\.1:[0-9]+" "$1" | tail -n 1'
+    )
       return { stdout: this.appServerLog, stderr: "", code: this.appServerLog ? 0 : 1 };
     if (program === "test" && args[0] === "-L") return { stdout: "", stderr: "", code: 1 };
     if (program === "test" && args[0] === "-e") return { stdout: "", stderr: "", code: 1 };
@@ -166,6 +173,19 @@ describe("remote command safety", () => {
     );
     expect(result).toMatchObject({ appServerPane: "%1", viewerPane: "%2", remotePort: 41111 });
     expect(remote.calls.some((call) => call[1][0] === "new-session")).toBe(false);
+  });
+  it("discovers an existing app-server port even when later log output pushes it out of the tail", async () => {
+    const remote = new FakeRemote();
+    remote.sessionExists = true;
+    remote.appServerLog = "codex app-server (WebSockets) listening on: ws://127.0.0.1:35020\n";
+    remote.appServerLogTail = "later model refresh output\n";
+    const result = await new TmuxCodexRuntime(remote, { runtimeDirectory: "/safe/runtime" }).start(
+      "existing",
+      "/tmp",
+      26638,
+    );
+
+    expect(result.remotePort).toBe(35020);
   });
   it("discovers an existing managed tmux session when pane separators arrive as underscores", async () => {
     const remote = new FakeRemote();

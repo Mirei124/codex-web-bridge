@@ -505,7 +505,13 @@ export class TmuxCodexRuntime {
     return output || undefined;
   }
   private async detectLoggedRemotePort(appServerLogPath: string): Promise<number | undefined> {
-    const output = await this.appServerLogExcerpt(appServerLogPath);
+    const result = await this.remote.execute("sh", [
+      "-c",
+      'test -f "$1" && grep -a -E "listening on:[[:space:]]+ws://127\\.0\\.0\\.1:[0-9]+" "$1" | tail -n 1',
+      "cwb-app-server-port",
+      appServerLogPath,
+    ]);
+    const output = `${result.stdout}${result.stderr}`.trim();
     return output ? parseAppServerListeningPort(output) : undefined;
   }
   private describeExecutableFailure(program: string, result: CommandResult): string {
