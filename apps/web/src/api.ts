@@ -14,6 +14,7 @@ import type {
   ThreadCreateDefaults,
   ThreadDetail,
   ThreadSummary,
+  UpdateThreadRequest,
   TerminalSnapshotResponse,
   UpdateSettingsRequest,
 } from "@cwb/protocol";
@@ -90,6 +91,8 @@ export const api = {
   deleteThreadCreateCwd: (body: DeleteThreadCreateCwdRequest) =>
     request<void>(apiRoutes.threadCreateCwdHistory, { method: "DELETE", body: JSON.stringify(body) }),
   thread: (id: string) => request<ThreadDetail>(`${apiRoutes.threads}/${encodeURIComponent(id)}`),
+  updateThread: (id: string, body: UpdateThreadRequest) =>
+    request<ThreadSummary>(apiRoutes.updateThread(id), { method: "PATCH", body: JSON.stringify(body) }),
   deleteThread: (id: string) => request<void>(`${apiRoutes.threads}/${encodeURIComponent(id)}`, { method: "DELETE" }),
   createThread: (body: CreateThreadRequest) =>
     request<ThreadDetail>(apiRoutes.threads, { method: "POST", body: JSON.stringify(body) }),

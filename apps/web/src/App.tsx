@@ -882,6 +882,9 @@ export default function App() {
   const [exiting, setExiting] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [operationError, setOperationError] = useState("");
+  const [editingThreadId, setEditingThreadId] = useState<string>();
+  const [threadTitleDraft, setThreadTitleDraft] = useState("");
+  const [savingThreadTitle, setSavingThreadTitle] = useState(false);
   const [view, setView] = useState<"threads" | "settings">("threads");
   const [unread, setUnread] = useState<Set<string>>(() => new Set());
   const [toast, setToast] = useState<string>();
@@ -1231,6 +1234,34 @@ export default function App() {
       setOperationError(error instanceof Error ? error.message : "删除会话失败");
     }
   }
+  async function saveThreadTitle(thread: ThreadSummary) {
+    const title = threadTitleDraft.trim();
+    if (!title || savingThreadTitle) return;
+    setSavingThreadTitle(true);
+    try {
+      const updated = await api.updateThread(thread.id, { title });
+      setThreads((old) => old.map((item) => (item.id === updated.id ? updated : item)));
+      setSelected((old) => (old?.id === updated.id ? { ...old, ...updated } : old));
+      setEditingThreadId(undefined);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : "保存会话标题失败");
+    } finally {
+      setSavingThreadTitle(false);
+    }
+  }
+  async function toggleThreadPinned(thread: ThreadSummary) {
+    try {
+      const updated = await api.updateThread(thread.id, { pinned: !thread.pinned });
+      setThreads((old) =>
+        old
+          .map((item) => (item.id === updated.id ? updated : item))
+          .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))),
+      );
+      setSelected((old) => (old?.id === updated.id ? { ...old, ...updated } : old));
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : "更新置顶状态失败");
+    }
+  }
   const terminalInput = useCallback(
     (data: string) => {
       if (selected?.terminal.takeover) void api.terminalInput(selected.id, data);
@@ -1316,10 +1347,45 @@ export default function App() {
                   void selectThread(t);
                 }}
               >
-                <span>{t.title}</span>
+                {editingThreadId === t.id ? (
+                  <input
+                    className="thread-title-input"
+                    aria-label="会话标题"
+                    autoFocus
+                    value={threadTitleDraft}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => setThreadTitleDraft(event.target.value)}
+                    onBlur={() => void saveThreadTitle(t)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void saveThreadTitle(t);
+                      if (event.key === "Escape") setEditingThreadId(undefined);
+                    }}
+                  />
+                ) : (
+                  <span
+                    className="thread-title"
+                    title="点击编辑会话主题"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setEditingThreadId(t.id);
+                      setThreadTitleDraft(t.title);
+                      setView("threads");
+                      void selectThread(t);
+                    }}
+                  >
+                    {t.title}
+                  </span>
+                )}
                 <small>
                   {threadStateSummary(t).label} · {t.cwd}
                 </small>
+              </button>
+              <button
+                className={`thread-pin ${t.pinned ? "pinned" : ""}`}
+                aria-label={`${t.pinned ? "取消置顶" : "置顶"}会话 ${t.title}`}
+                onClick={() => void toggleThreadPinned(t)}
+              >
+                {t.pinned ? "★" : "☆"}
               </button>
               <button className="thread-delete" aria-label={`删除会话 ${t.title}`} onClick={() => void deleteThread(t)}>
                 ×

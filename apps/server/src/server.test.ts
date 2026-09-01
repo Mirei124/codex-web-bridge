@@ -258,6 +258,7 @@ class FakeRuntime implements RuntimeManager {
   resolutions: Array<{ requestId: string | number; value: unknown }> = [];
   failExit = false;
   historicalThreads: Array<{ id: string; title?: string; cwd?: string; updatedAt?: string }> = [];
+  generatedThreadTitle: string | undefined;
   probeResults = new Map<number, "reachable" | "missing">();
   probeError: Error | undefined;
   directoryExists = true;
@@ -292,6 +293,9 @@ class FakeRuntime implements RuntimeManager {
     this.calls.push("send");
     this.sentMessages.push(text);
     return "turn-1";
+  }
+  async generatedTitle() {
+    return this.generatedThreadTitle;
   }
   async interrupt() {
     this.calls.push("interrupt");
@@ -473,6 +477,15 @@ it("wires authenticated thread operations to the runtime", async () => {
     prependPath: "/thread/bin",
   });
   expect(storage.thread(id)).toMatchObject({ proxy: "http://proxy.example:8080", prependPath: "/thread/bin" });
+  const renamed = await app.inject({
+    method: "PATCH",
+    url: `/api/threads/${id}`,
+    headers,
+    payload: { title: "整理会话主题", pinned: true },
+  });
+  expect(renamed.statusCode).toBe(200);
+  expect(renamed.json()).toMatchObject({ title: "整理会话主题", pinned: true });
+  expect(storage.thread(id)).toMatchObject({ title: "整理会话主题", pinned: 1, titleGenerated: 0 });
   expect(runtime.directoryChecks).toContainEqual({ cwd: "/work", create: true });
   const sent = await app.inject({
     method: "POST",

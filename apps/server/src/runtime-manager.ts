@@ -35,6 +35,7 @@ export interface RuntimeManager {
   detach?(threadId: string): Promise<void>;
   exit(thread: ThreadRecord, host?: HostRecord): Promise<void>;
   send(thread: ThreadRecord, text: string): Promise<string | undefined>;
+  generatedTitle?(thread: ThreadRecord): Promise<string | undefined>;
   interrupt(thread: ThreadRecord): Promise<void>;
   resolve(thread: ThreadRecord, requestId: string | number, value: unknown): Promise<void>;
   prepareTerminal(thread: ThreadRecord): Promise<void>;
@@ -244,6 +245,12 @@ export class HostRuntimeManager implements RuntimeManager {
     active.hasRollout = true;
     await this.prepareTerminal(thread);
     return active.turnId;
+  }
+  async generatedTitle(thread: ThreadRecord): Promise<string | undefined> {
+    const active = this.must(thread.id);
+    const result = await active.client.listThreads({ limit: 100 });
+    const match = result.data.find((candidate) => candidate.id === thread.codexThreadId);
+    return typeof match?.name === "string" && match.name.trim() ? match.name.trim() : undefined;
   }
   async interrupt(thread: ThreadRecord): Promise<void> {
     const active = this.must(thread.id);

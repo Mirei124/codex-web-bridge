@@ -41,6 +41,7 @@ export interface ThreadSummary {
   codexThreadId?: string;
   hostId: string;
   title: string;
+  pinned?: boolean;
   cwd: string;
   proxy?: string;
   prependPath?: string;
@@ -49,6 +50,10 @@ export interface ThreadSummary {
   lastError?: string;
   lastErrorKind?: ThreadErrorKind;
   updatedAt: string;
+}
+export interface UpdateThreadRequest {
+  title?: string;
+  pinned?: boolean;
 }
 
 export interface ChatMessage {
@@ -270,6 +275,7 @@ export const apiRoutes = {
   hosts: "/api/hosts",
   settings: "/api/settings",
   threads: "/api/threads",
+  updateThread: (threadId: string) => `/api/threads/${encodeURIComponent(threadId)}`,
   threadCreateDefaults: "/api/preferences/thread-create",
   threadCreateCwdHistory: "/api/preferences/thread-create/cwd-history",
   resumeThread: "/api/threads/resume",

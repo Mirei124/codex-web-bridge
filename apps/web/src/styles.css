@@ -415,7 +415,7 @@ nav small {
 }
 .thread-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   border-radius: 15px;
   transition: background 0.18s;
 }
@@ -465,6 +465,37 @@ nav small {
   min-width: 0;
   text-align: left;
   padding: 9px 11px;
+}
+.thread-title {
+  cursor: text;
+}
+.thread-title:hover {
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+}
+.thread-title-input {
+  width: 100%;
+  min-height: 28px;
+  padding: 3px 7px;
+  font: inherit;
+  font-weight: 800;
+}
+.thread-pin {
+  align-self: center;
+  min-height: 32px;
+  width: 28px;
+  padding: 0;
+  color: #a99355;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.thread-pin:hover:not(:disabled),
+.thread-pin.pinned {
+  color: #e09a19;
+  background: transparent;
+  transform: none;
+  box-shadow: none;
 }
 .thread-delete {
   align-self: center;

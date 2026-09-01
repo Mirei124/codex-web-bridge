@@ -46,6 +46,8 @@ export interface ThreadRecord {
   proxy?: string;
   prependPath?: string;
   title: string;
+  pinned?: number;
+  titleGenerated?: number;
   status: string;
   lastError?: string;
   lastErrorKind?: string;
@@ -107,7 +109,7 @@ export class Storage {
       CREATE TABLE IF NOT EXISTS threads (
         id TEXT PRIMARY KEY, host_id TEXT NOT NULL REFERENCES hosts(id),
         codex_thread_id TEXT, tmux_session TEXT NOT NULL UNIQUE, remote_port INTEGER,
-        working_directory TEXT NOT NULL, proxy TEXT, prepend_path TEXT, title TEXT NOT NULL, status TEXT NOT NULL, last_error TEXT, last_error_kind TEXT, has_rollout INTEGER NOT NULL DEFAULT 0,
+        working_directory TEXT NOT NULL, proxy TEXT, prepend_path TEXT, title TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, title_generated INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL, last_error TEXT, last_error_kind TEXT, has_rollout INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS threads_host_id ON threads(host_id);
@@ -145,6 +147,10 @@ export class Storage {
     const threadColumns = this.db.prepare("PRAGMA table_info(threads)").all() as Array<{ name: string }>;
     if (!threadColumns.some((column) => column.name === "title"))
       this.db.exec("ALTER TABLE threads ADD COLUMN title TEXT NOT NULL DEFAULT 'Codex thread'");
+    if (!threadColumns.some((column) => column.name === "pinned"))
+      this.db.exec("ALTER TABLE threads ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
+    if (!threadColumns.some((column) => column.name === "title_generated"))
+      this.db.exec("ALTER TABLE threads ADD COLUMN title_generated INTEGER NOT NULL DEFAULT 1");
     if (!threadColumns.some((column) => column.name === "remote_port"))
       this.db.exec("ALTER TABLE threads ADD COLUMN remote_port INTEGER");
     if (!threadColumns.some((column) => column.name === "proxy"))
@@ -236,21 +242,21 @@ export class Storage {
   threads(): ThreadRecord[] {
     return this.db
       .prepare(
-        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,status,last_error AS lastError,last_error_kind AS lastErrorKind,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads ORDER BY updated_at DESC",
+        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,pinned,title_generated AS titleGenerated,status,last_error AS lastError,last_error_kind AS lastErrorKind,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads ORDER BY pinned DESC,updated_at DESC",
       )
       .all() as ThreadRecord[];
   }
   thread(id: string): ThreadRecord | undefined {
     return this.db
       .prepare(
-        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,status,last_error AS lastError,last_error_kind AS lastErrorKind,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads WHERE id=?",
+        "SELECT id,host_id AS hostId,codex_thread_id AS codexThreadId,tmux_session AS tmuxSession,remote_port AS remotePort,working_directory AS workingDirectory,proxy,prepend_path AS prependPath,title,pinned,title_generated AS titleGenerated,status,last_error AS lastError,last_error_kind AS lastErrorKind,has_rollout AS hasRollout,created_at AS createdAt,updated_at AS updatedAt FROM threads WHERE id=?",
       )
       .get(id) as ThreadRecord | undefined;
   }
   createThread(thread: ThreadRecord): void {
     this.db
       .prepare(
-        "INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,prepend_path,title,status,last_error,last_error_kind,has_rollout,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO threads(id,host_id,codex_thread_id,tmux_session,remote_port,working_directory,proxy,prepend_path,title,pinned,title_generated,status,last_error,last_error_kind,has_rollout,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         thread.id,
@@ -262,6 +268,8 @@ export class Storage {
         thread.proxy ?? null,
         thread.prependPath ?? null,
         thread.title,
+        thread.pinned ?? 0,
+        thread.titleGenerated ?? 1,
         thread.status,
         thread.lastError ?? null,
         thread.lastErrorKind ?? null,
@@ -279,12 +287,15 @@ export class Storage {
       lastError?: string | null;
       lastErrorKind?: string | null;
       hasRollout?: number;
+      title?: string;
+      pinned?: number;
+      titleGenerated?: number;
       updatedAt: number;
     },
   ): void {
     this.db
       .prepare(
-        "UPDATE threads SET codex_thread_id=COALESCE(?,codex_thread_id),remote_port=COALESCE(?,remote_port),status=COALESCE(?,status),last_error=?,last_error_kind=?,has_rollout=COALESCE(?,has_rollout),updated_at=? WHERE id=?",
+        "UPDATE threads SET codex_thread_id=COALESCE(?,codex_thread_id),remote_port=COALESCE(?,remote_port),status=COALESCE(?,status),last_error=?,last_error_kind=?,has_rollout=COALESCE(?,has_rollout),title=COALESCE(?,title),pinned=COALESCE(?,pinned),title_generated=COALESCE(?,title_generated),updated_at=? WHERE id=?",
       )
       .run(
         update.codexThreadId ?? null,
@@ -293,6 +304,9 @@ export class Storage {
         update.lastError ?? null,
         update.lastErrorKind ?? null,
         update.hasRollout ?? null,
+        update.title ?? null,
+        update.pinned ?? null,
+        update.titleGenerated ?? null,
         update.updatedAt,
         id,
       );

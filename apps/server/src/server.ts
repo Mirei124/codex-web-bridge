@@ -90,6 +90,7 @@ function summary(thread: ThreadRecord): ThreadSummary {
     codexThreadId: thread.codexThreadId,
     hostId: thread.hostId,
     title: thread.title,
+    pinned: thread.pinned === 1,
     cwd: thread.workingDirectory,
     proxy: thread.proxy,
     prependPath: thread.prependPath,
@@ -565,6 +566,27 @@ export async function buildServer(
     return reply.code(204).send();
   });
   app.get(apiRoutes.threads, async () => storage.threads().map(summary));
+  app.patch<{ Params: { id: string }; Body: { title?: string; pinned?: boolean } }>(
+    `${apiRoutes.threads}/:id`,
+    async (request, reply) => {
+      const thread = withThread(request.params.id);
+      const { title, pinned } = request.body;
+      if (title === undefined && pinned === undefined)
+        return reply.code(400).send({ error: "title or pinned is required" });
+      if (title !== undefined && (typeof title !== "string" || !title.trim() || title.trim().length > 120))
+        return reply.code(400).send({ error: "title must be between 1 and 120 characters" });
+      if (pinned !== undefined && typeof pinned !== "boolean")
+        return reply.code(400).send({ error: "pinned must be a boolean" });
+      storage.updateThread(thread.id, {
+        ...(title === undefined ? {} : { title: title.trim(), titleGenerated: 0 }),
+        ...(pinned === undefined ? {} : { pinned: pinned ? 1 : 0 }),
+        updatedAt: Date.now(),
+      });
+      const updated = storage.thread(thread.id)!;
+      publish({ type: "thread.updated", thread: summary(updated) });
+      return summary(updated);
+    },
+  );
   app.get<{ Params: { id: string } }>(`${apiRoutes.threads}/:id`, async (request, reply) => {
     const thread = storage.thread(request.params.id);
     if (!thread) return reply.code(404).send({ error: "not found" });
@@ -1152,6 +1174,17 @@ export async function buildServer(
       });
       const thread = storage.thread(event.threadId);
       if (thread) publish({ type: "thread.updated", thread: summary(thread) });
+      if (thread && thread.titleGenerated === 1) {
+        void runtime
+          .generatedTitle?.(thread)
+          .then((title) => {
+            const current = storage.thread(thread.id);
+            if (!title || !current || current.titleGenerated !== 1) return;
+            storage.updateThread(thread.id, { title, titleGenerated: 0, updatedAt: Date.now() });
+            publish({ type: "thread.updated", thread: summary(storage.thread(thread.id)!) });
+          })
+          .catch(() => undefined);
+      }
       if (params.turn?.error)
         publish({
           type: "error",
